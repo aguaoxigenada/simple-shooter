@@ -1,17 +1,19 @@
 import * as THREE from 'three';
 import { scene, camera, renderer } from './core/scene.js';
-import { initEnvironment } from './world/environment.js';
-import { initTargets } from './entities/targets.js';
-import { initPlayerControls, updatePlayer } from './entities/player.js';
-import { initWeapon, updateWeapon } from './systems/weapon.js';
-import { updateProjectiles } from './systems/projectile.js';
-import { updateUI } from './systems/ui.js';
+import { SCENES, registerScene, switchScene, updateScene, renderScene } from './core/sceneManager.js';
+import * as mainMenuScene from './scenes/mainMenu.js';
+import * as gameScene from './scenes/game.js';
+import * as gameOverScene from './scenes/gameOver.js';
+import * as victoryScene from './scenes/victory.js';
 
-// Initialize game
-initEnvironment();
-initTargets();
-initPlayerControls(renderer);
-initWeapon(renderer);
+// Register all scenes
+registerScene(SCENES.MAIN_MENU, mainMenuScene);
+registerScene(SCENES.GAME, gameScene);
+registerScene(SCENES.GAME_OVER, gameOverScene);
+registerScene(SCENES.VICTORY, victoryScene);
+
+// Start with main menu
+switchScene(SCENES.MAIN_MENU);
 
 // Animation loop
 const clock = new THREE.Clock();
@@ -21,20 +23,11 @@ function animate() {
     
     const deltaTime = clock.getDelta();
     
-    // Update player
-    updatePlayer(deltaTime);
+    // Update current scene
+    updateScene(deltaTime);
     
-    // Update weapon
-    updateWeapon(deltaTime);
-    
-    // Update projectiles (rockets)
-    updateProjectiles(deltaTime);
-    
-    // Update UI
-    updateUI();
-    
-    // Render
-    renderer.render(scene, camera);
+    // Render current scene
+    renderScene(renderer, camera, scene);
 }
 
 animate();

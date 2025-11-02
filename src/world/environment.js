@@ -4,16 +4,6 @@ import { scene } from '../core/scene.js';
 // Store collidable objects for collision detection
 export const collidableObjects = [];
 
-// Ground
-const groundGeometry = new THREE.PlaneGeometry(200, 200);
-const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x90EE90 });
-const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = 0;
-ground.receiveShadow = true;
-ground.userData.isCollidable = false; // Ground is not collidable
-scene.add(ground);
-
 // Create environment (walls, boxes, etc.)
 export function createBox(x, y, z, width = 2, height = 2, depth = 2, color = 0x8B4513) {
     const geometry = new THREE.BoxGeometry(width, height, depth);
@@ -29,6 +19,19 @@ export function createBox(x, y, z, width = 2, height = 2, depth = 2, color = 0x8
 
 // Initialize environment
 export function initEnvironment() {
+    // Clear collidable objects array when reinitializing
+    collidableObjects.length = 0;
+    
+    // Create ground
+    const groundGeometry = new THREE.PlaneGeometry(200, 200);
+    const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x90EE90 });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    ground.receiveShadow = true;
+    ground.userData.isCollidable = false; // Ground is not collidable
+    scene.add(ground);
+    
     // Add some walls and cover objects
     scene.add(createBox(10, 1, 0, 20, 2, 1, 0x696969));
     scene.add(createBox(-10, 1, 0, 20, 2, 1, 0x696969));
