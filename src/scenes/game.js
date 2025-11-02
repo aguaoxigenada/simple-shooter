@@ -8,6 +8,7 @@ import { initPlayerControls, updatePlayer } from '../entities/player.js';
 import { initWeapon, updateWeapon } from '../systems/weapon.js';
 import { updateProjectiles } from '../systems/projectile.js';
 import { updateUI } from '../systems/ui.js';
+import { initWeaponViewModel, updateWeaponViewModel, triggerMuzzleFlash, cleanupWeaponViewModel } from '../entities/weaponViewModel.js';
 
 let isInitialized = false;
 
@@ -57,7 +58,8 @@ export function init() {
     initEnvironment();
     initTargets();
     initPlayerControls(renderer);
-    initWeapon(renderer);
+    initWeapon(renderer); // This sets gameState.currentWeapon
+    initWeaponViewModel(); // This needs currentWeapon to be set
     
     isInitialized = true;
     
@@ -90,8 +92,16 @@ export function update(deltaTime) {
     // Update player
     updatePlayer(deltaTime);
     
-    // Update weapon
-    updateWeapon(deltaTime);
+    // Update weapon (returns true if shot was fired)
+    const shotFired = updateWeapon(deltaTime);
+    
+    // Trigger muzzle flash if shot was fired
+    if (shotFired) {
+        triggerMuzzleFlash();
+    }
+    
+    // Update weapon viewmodel
+    updateWeaponViewModel(deltaTime, shotFired);
     
     // Update projectiles (rockets)
     updateProjectiles(deltaTime);
@@ -123,6 +133,9 @@ export function render(rendererInstance, cameraInstance, sceneInstance) {
 
 export function cleanup() {
     isInitialized = false;
+    
+    // Cleanup weapon viewmodel
+    cleanupWeaponViewModel();
     
     // Hide game UI
     const gameUI = document.getElementById('ui');

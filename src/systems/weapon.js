@@ -170,11 +170,11 @@ export function shoot() {
         if (weapon.ammoTotal > 0 && !isReloading) {
             reload();
         }
-        return;
+        return false;
     }
     
-    if (shootCooldown > 0) return;
-    if (isReloading) return;
+    if (shootCooldown > 0) return false;
+    if (isReloading) return false;
     
     weapon.ammo--;
     shootCooldown = weapon.fireRate;
@@ -184,6 +184,8 @@ export function shoot() {
     } else if (weapon.projectileType === 'projectile') {
         shootProjectile(weapon);
     }
+    
+    return true; // Return true if shot was fired
 }
 
 export function updateWeapon(deltaTime) {
@@ -211,14 +213,18 @@ export function updateWeapon(deltaTime) {
     }
     
     // Handle auto-fire or semi-auto
+    let shotFired = false;
     if (isShooting && !isReloading && shootCooldown <= 0) {
         if (weapon.fireMode === 'auto') {
-            shoot();
+            shotFired = shoot();
         } else if (weapon.fireMode === 'semi-auto') {
             // For semi-auto, shoot once and then stop shooting until mouse is released and pressed again
-            shoot();
+            shotFired = shoot();
             // Don't allow shooting again until mouse is released
             isShooting = false;
         }
     }
+    
+    // Return whether a shot was fired (for viewmodel animation)
+    return shotFired;
 }
