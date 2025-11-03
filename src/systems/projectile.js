@@ -101,7 +101,9 @@ function createExplosion(position) {
     
     // Area damage
     const explosionRadius = 3;
-    for (const target of targets) {
+    // Iterate backwards to safely remove items from array
+    for (let i = targets.length - 1; i >= 0; i--) {
+        const target = targets[i];
         const distance = target.position.distanceTo(position);
         if (distance <= explosionRadius) {
             // Damage decreases with distance
@@ -111,8 +113,7 @@ function createExplosion(position) {
             
             if (target.userData.health <= 0) {
                 scene.remove(target);
-                const index = targets.indexOf(target);
-                if (index > -1) targets.splice(index, 1);
+                targets.splice(i, 1);
                 gameState.kills++;
             }
         }

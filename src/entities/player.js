@@ -60,6 +60,10 @@ export function initPlayerControls(renderer) {
                 keys.ctrl = true; 
                 isCrouched = true;
                 break;
+            case 'KeyK':
+                // Kill player for testing purposes
+                gameState.health = 0;
+                break;
         }
     });
 

@@ -33,10 +33,12 @@ export function createTarget(x, y, z) {
 
 // Initialize targets
 export function initTargets() {
-    createTarget(15, 0, 0);
-    createTarget(-15, 0, 0);
-    createTarget(0, 0, 15);
-    createTarget(0, 0, -15);
-    createTarget(12, 0, 12);
-    createTarget(-12, 0, -12);
+    // Position targets in clear areas completely outside walls
+    // Walls extend: x=-20 to 20, z=-20 to 20, so place enemies at least 3 units outside
+    createTarget(25, 0, 0);      // East (right)
+    createTarget(-25, 0, 0);     // West (left)
+    createTarget(0, 0, 25);      // North (forward)
+    createTarget(0, 0, -25);     // South (back)
+    createTarget(22, 0, 22);      // Northeast
+    createTarget(-22, 0, -22);    // Southwest
 }

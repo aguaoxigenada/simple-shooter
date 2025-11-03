@@ -11,6 +11,7 @@ import { updateUI } from '../systems/ui.js';
 import { initWeaponViewModel, updateWeaponViewModel, triggerMuzzleFlash, cleanupWeaponViewModel } from '../entities/weaponViewModel.js';
 
 let isInitialized = false;
+let victoryTriggered = false;
 
 export function init() {
     console.log('Game scene init called');
@@ -21,6 +22,7 @@ export function init() {
     gameState.isMouseLocked = false;
     gameState.stamina = 100;
     gameState.currentWeapon = null;
+    victoryTriggered = false;
     
     // Clear scene (but keep background and fog settings)
     // Remove all objects but preserve scene properties
@@ -117,11 +119,11 @@ export function update(deltaTime) {
     
     // Check for victory (all targets destroyed)
     // Only check if we've started with targets (prevent immediate victory on init)
-    if (targets.length === 0 && isInitialized && gameState.kills > 0) {
-        // Wait a moment to show the last kill, then switch to victory
-        setTimeout(() => {
-            switchScene(SCENES.VICTORY);
-        }, 500);
+    if (targets.length === 0 && isInitialized && gameState.kills > 0 && !victoryTriggered) {
+        victoryTriggered = true;
+        // Switch to victory scene immediately (no delay needed since UI update happens after this)
+        switchScene(SCENES.VICTORY);
+        return;
     }
 }
 
