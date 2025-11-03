@@ -9,9 +9,74 @@ import { initWeapon, updateWeapon } from '../systems/weapon.js';
 import { updateProjectiles } from '../systems/projectile.js';
 import { updateUI } from '../systems/ui.js';
 import { initWeaponViewModel, updateWeaponViewModel, triggerMuzzleFlash, cleanupWeaponViewModel } from '../entities/weaponViewModel.js';
+import { networkClient } from '../network/client.js';
+import { playerManager } from '../network/playerManager.js';
+import { MESSAGE_TYPES } from '../shared/constants.js';
 
 let isInitialized = false;
 let victoryTriggered = false;
+
+function setupNetworkCallbacks() {
+    // Game state updates from server
+    networkClient.onGameStateUpdate = (serverGameState) => {
+        // Update all players from server state
+        if (serverGameState.players) {
+            for (const [playerId, playerState] of Object.entries(serverGameState.players)) {
+                const isLocal = playerId === playerManager.localPlayerId;
+                
+                // Update or create player entity
+                let player = playerManager.players.get(playerId);
+                if (!player) {
+                    player = playerManager.addPlayer(playerId, isLocal);
+                }
+                
+                playerManager.updatePlayerFromServer(playerId, playerState);
+                
+                // If this is the local player, sync camera position
+                if (isLocal) {
+                    const pos = playerState.position;
+                    camera.position.set(pos.x, pos.y, pos.z);
+                }
+            }
+            
+            // Remove players that are no longer in the game
+            const serverPlayerIds = new Set(Object.keys(serverGameState.players));
+            for (const [playerId] of playerManager.players.entries()) {
+                if (!serverPlayerIds.has(playerId) && playerId !== playerManager.localPlayerId) {
+                    playerManager.removePlayer(playerId);
+                }
+            }
+        }
+    };
+    
+    // Player joined
+    networkClient.onPlayerJoined = (data) => {
+        console.log('Player joined:', data.playerId);
+        playerManager.addPlayer(data.playerId, false);
+    };
+    
+    // Player spawned (local player)
+    networkClient.onPlayerSpawned = (data) => {
+        console.log('Local player spawned:', data.playerId);
+        playerManager.setLocalPlayerId(data.playerId);
+        playerManager.addPlayer(data.playerId, true);
+    };
+    
+    // Player left
+    networkClient.onPlayerLeft = (data) => {
+        console.log('Player left:', data.playerId);
+        playerManager.removePlayer(data.playerId);
+    };
+    
+    // Connection status change
+    networkClient.onConnectionChange = (isConnected) => {
+        if (isConnected) {
+            console.log('Connected to multiplayer server');
+        } else {
+            console.log('Disconnected from multiplayer server');
+        }
+    };
+}
 
 export function init() {
     console.log('Game scene init called');
@@ -63,6 +128,13 @@ export function init() {
     initWeapon(renderer); // This sets gameState.currentWeapon
     initWeaponViewModel(); // This needs currentWeapon to be set
     
+    // Setup network callbacks
+    setupNetworkCallbacks();
+    
+    // Connect to multiplayer server (optional - can be disabled for single player)
+    // Uncomment to enable multiplayer:
+    // networkClient.connect('Player');
+    
     isInitialized = true;
     
     // Hide all other scene UIs
@@ -108,6 +180,9 @@ export function update(deltaTime) {
     // Update projectiles (rockets)
     updateProjectiles(deltaTime);
     
+    // Update network players
+    playerManager.updateAll(deltaTime);
+    
     // Update UI
     updateUI();
     
@@ -135,6 +210,9 @@ export function render(rendererInstance, cameraInstance, sceneInstance) {
 
 export function cleanup() {
     isInitialized = false;
+    
+    // Disconnect from server
+    networkClient.disconnect();
     
     // Cleanup weapon viewmodel
     cleanupWeaponViewModel();

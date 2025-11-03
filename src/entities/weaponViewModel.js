@@ -21,7 +21,8 @@ const muzzleParticles = [];
 
 // Base weapon position (bottom right viewmodel position)
 // Note: camera looks down -Z axis, so negative Z moves weapon forward (closer to camera)
-const basePosition = new THREE.Vector3(0.4, -0.3, -0.6); // Right, lower, closer
+// Adjusted for 50? FOV (moved slightly further away to compensate for narrower FOV)
+const basePosition = new THREE.Vector3(0.4, -0.3, -0.5); // Right, lower, closer
 const baseRotation = new THREE.Euler(-0.1, 0.2, 0.1); // Slight downward angle
 
 function createPistol() {

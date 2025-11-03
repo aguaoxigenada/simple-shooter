@@ -3,6 +3,7 @@ import { scene, camera } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
 import { targets } from '../entities/targets.js';
 import { createRocket } from './projectile.js';
+import { WEAPON } from '../shared/constants.js';
 
 // Weapon definitions
 export const WEAPON_TYPES = {
@@ -14,36 +15,18 @@ export const WEAPON_TYPES = {
 const weapons = {
     [WEAPON_TYPES.PISTOL]: {
         name: 'Pistol',
-        damage: 40,
-        fireRate: 0.5, // seconds between shots
-        ammoCapacity: 6,
-        ammo: 6,
-        ammoTotal: 24,
-        fireMode: 'semi-auto', // semi-auto or auto
-        projectileType: 'raycast', // raycast or projectile
-        reloadTime: 1.5
+        ...WEAPON.PISTOL,
+        ammo: WEAPON.PISTOL.AMMO_CAPACITY
     },
     [WEAPON_TYPES.ASSAULT_RIFLE]: {
         name: 'Assault Rifle',
-        damage: 50,
-        fireRate: 0.1,
-        ammoCapacity: 30,
-        ammo: 30,
-        ammoTotal: 90,
-        fireMode: 'auto',
-        projectileType: 'raycast',
-        reloadTime: 2.0
+        ...WEAPON.ASSAULT_RIFLE,
+        ammo: WEAPON.ASSAULT_RIFLE.AMMO_CAPACITY
     },
     [WEAPON_TYPES.ROCKET_LAUNCHER]: {
         name: 'Rocket Launcher',
-        damage: 100, // Base damage, actual is area-based
-        fireRate: 1.5,
-        ammoCapacity: 1,
-        ammo: 5,
-        ammoTotal: 5,
-        fireMode: 'semi-auto',
-        projectileType: 'projectile',
-        reloadTime: 2.5
+        ...WEAPON.ROCKET_LAUNCHER,
+        ammo: WEAPON.ROCKET_LAUNCHER.AMMO
     }
 };
 

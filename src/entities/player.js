@@ -2,21 +2,21 @@ import * as THREE from 'three';
 import { camera } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
 import { collidableObjects } from '../world/environment.js';
+import { PLAYER } from '../shared/constants.js';
+import { networkClient } from '../network/client.js';
 
-// Player controls constants
-export const moveSpeed = 5;
-export const sprintSpeed = 10; // 2x normal speed
-export const jumpVelocity = 8;
-export const mouseSensitivity = 0.002;
-export const staminaDepletionRate = 40; // per second
-export const staminaRecoveryRate = 20; // per second
-
-// Physics constants
-export const gravity = -20;
-export const playerHeight = 1.6;
-export const crouchHeight = 0.8; // Half of standing height
-export const playerRadius = 0.4; // Collision radius for player
-export const crouchSpeedMultiplier = 0.5; // Move 50% slower when crouched
+// Use shared constants
+const moveSpeed = PLAYER.MOVE_SPEED;
+const sprintSpeed = PLAYER.SPRINT_SPEED;
+const jumpVelocity = PLAYER.JUMP_VELOCITY;
+const mouseSensitivity = PLAYER.MOUSE_SENSITIVITY;
+const staminaDepletionRate = PLAYER.STAMINA_DEPLETION_RATE;
+const staminaRecoveryRate = PLAYER.STAMINA_RECOVERY_RATE;
+const gravity = PLAYER.GRAVITY;
+const playerHeight = PLAYER.PLAYER_HEIGHT;
+const crouchHeight = PLAYER.CROUCH_HEIGHT;
+const playerRadius = PLAYER.PLAYER_RADIUS;
+const crouchSpeedMultiplier = PLAYER.CROUCH_SPEED_MULTIPLIER;
 
 let velocity = new THREE.Vector3();
 let direction = new THREE.Vector3();
@@ -38,12 +38,22 @@ export const keys = {
     ctrl: false
 };
 
+// Mouse movement tracking for network
+let mouseDeltaX = 0;
+let mouseDeltaY = 0;
+
 export function initPlayerControls(renderer) {
     document.addEventListener('mousemove', (e) => {
         if (!gameState.isMouseLocked) return;
         
-        yaw -= e.movementX * mouseSensitivity;
-        pitch -= e.movementY * mouseSensitivity;
+        const deltaX = e.movementX * mouseSensitivity;
+        const deltaY = e.movementY * mouseSensitivity;
+        
+        mouseDeltaX = e.movementX;
+        mouseDeltaY = e.movementY;
+        
+        yaw -= deltaX;
+        pitch -= deltaY;
         pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
     });
 
@@ -101,6 +111,30 @@ function checkCollision(newX, newY, newZ) {
 }
 
 export function updatePlayer(deltaTime) {
+    // Collect input for networking
+    const inputData = {
+        keys: {
+            w: keys.w,
+            a: keys.a,
+            s: keys.s,
+            d: keys.d,
+            space: keys.space,
+            shift: keys.shift,
+            ctrl: keys.ctrl
+        },
+        mouseX: mouseDeltaX,
+        mouseY: mouseDeltaY
+    };
+    
+    // Reset mouse deltas after capturing
+    mouseDeltaX = 0;
+    mouseDeltaY = 0;
+    
+    // Send input to server if connected
+    if (networkClient.isConnected) {
+        networkClient.sendInput(inputData);
+    }
+    
     // Update camera rotation
     camera.rotation.order = 'YXZ';
     camera.rotation.y = yaw;
