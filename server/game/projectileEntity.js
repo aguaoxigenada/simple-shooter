@@ -2,12 +2,13 @@
 import { PROJECTILE } from '../shared/constants.js';
 
 export class ProjectileEntity {
-    constructor(id, position, velocity, damage, ownerId) {
+    constructor(id, position, velocity, damage, ownerId, weaponType = null) {
         this.id = id;
         this.position = { ...position };
         this.velocity = { ...velocity };
         this.damage = damage;
         this.ownerId = ownerId;
+        this.weaponType = weaponType;
         this.age = 0;
         this.lifetime = PROJECTILE.ROCKET_LIFETIME;
         this.isHit = false;

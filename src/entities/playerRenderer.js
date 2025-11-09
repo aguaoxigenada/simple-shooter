@@ -175,22 +175,27 @@ export class PlayerRenderer {
     dispose() {
         // Clean up resources
         if (this.nameTag) {
-            this.nameTag.material.dispose();
-            this.nameTag.map.dispose();
+            if (this.nameTag.material) this.nameTag.material.dispose();
+            if (this.nameTag.material?.map) this.nameTag.material.map.dispose();
+            this.nameTag = null;
         }
+
         if (this.healthBar) {
-            this.healthBar.material.dispose();
-            this.healthBar.geometry.dispose();
+            if (this.healthBar.material) this.healthBar.material.dispose();
+            if (this.healthBar.geometry) this.healthBar.geometry.dispose();
+            this.healthBar = null;
         }
         
         // Remove all meshes
-        this.group.traverse((object) => {
-            if (object.isMesh) {
-                object.geometry.dispose();
-                object.material.dispose();
-            }
-        });
-        
-        scene.remove(this.group);
+        if (this.group) {
+            this.group.traverse((object) => {
+                if (object.isMesh) {
+                    object.geometry?.dispose?.();
+                    object.material?.dispose?.();
+                }
+            });
+            scene.remove(this.group);
+            this.group = null;
+        }
     }
 }

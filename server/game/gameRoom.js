@@ -26,6 +26,7 @@ export class GameRoom {
         // Input rate limiting per player
         this.playerInputRates = new Map(); // socketId -> { count: number, resetTime: number }
         this.destroyedTargets = new Set();
+        this.matchOver = false;
     }
 
     addPlayer(socket) {
@@ -105,6 +106,9 @@ export class GameRoom {
         
         // Update player input state
         try {
+            if (inputData.shoot) {
+                console.log(`[Input] Shoot received from ${socketId} at ${new Date().toISOString()}`);
+            }
             player.updateInput(inputData);
         } catch (error) {
             console.error(`Error processing input for player ${socketId}:`, error);
@@ -219,6 +223,10 @@ export class GameRoom {
     }
 
     update(deltaTime) {
+        if (this.matchOver) {
+            return;
+        }
+
         try {
             // Update all players
             const playerArray = Array.from(this.players.values());
@@ -228,13 +236,25 @@ export class GameRoom {
                     const otherPlayers = playerArray.filter(p => p.id !== player.id);
                     
                     // Create callback for projectile creation
-                    const onShoot = (position, velocity, damage, ownerId) => {
+                    const onShoot = (position, velocity, damage, ownerId, weaponType) => {
                         const projectileId = `projectile_${Date.now()}_${Math.random()}`;
-                        const projectile = new ProjectileEntity(projectileId, position, velocity, damage, ownerId);
+                        const projectile = new ProjectileEntity(projectileId, position, velocity, damage, ownerId, weaponType);
                         this.projectiles.push(projectile);
                     };
+
+                    const onPlayerHit = ({ attackerId, targetId, damage, weaponType, wasFatal }) => {
+                        const targetPlayer = this.players.get(targetId);
+                        if (!targetPlayer) {
+                            return;
+                        }
+
+                        this.handlePlayerDamage(targetPlayer, attackerId, damage, weaponType, wasFatal);
+                    };
                     
-                    player.update(deltaTime, otherPlayers, this.collisionManager, onShoot);
+                    player.update(deltaTime, otherPlayers, this.collisionManager, onShoot, onPlayerHit);
+                    if (this.matchOver) {
+                        break;
+                    }
                 } catch (error) {
                     console.error(`Error updating player ${player.id}:`, error);
                 }
@@ -244,7 +264,9 @@ export class GameRoom {
             this.updateProjectiles(deltaTime);
             
             // Check collisions
-            this.checkCollisions();
+            if (!this.matchOver) {
+                this.checkCollisions();
+            }
             
             // Send network updates at specified rate
             const now = Date.now();
@@ -275,13 +297,10 @@ export class GameRoom {
             for (const player of this.players.values()) {
                 if (projectile.hitsPlayer(player)) {
                     // Apply damage
-                    player.takeDamage(projectile.damage);
+                    const wasFatal = player.takeDamage(projectile.damage);
                     projectile.markHit();
                     
-                    if (player.health <= 0) {
-                        // Handle player death
-                        this.handlePlayerDeath(player);
-                    }
+                    this.handlePlayerDamage(player, projectile.ownerId, projectile.damage, projectile.weaponType || null, wasFatal);
                     
                     break; // Projectile can only hit one player
                 }
@@ -292,14 +311,66 @@ export class GameRoom {
         this.projectiles = this.projectiles.filter(p => !p.isHit);
     }
 
-    handlePlayerDeath(player) {
-        // Reset player
-        player.respawn();
-        
-        // Notify clients
-        this.io.to(this.roomId).emit(MESSAGE_TYPES.PLAYER_DIED, {
-            playerId: player.id
+    handlePlayerDamage(targetPlayer, attackerId, damage, weaponType, wasFatal) {
+        if (!targetPlayer) {
+            return;
+        }
+
+        this.io.to(this.roomId).emit(MESSAGE_TYPES.PLAYER_HIT, {
+            attackerId: attackerId || null,
+            targetId: targetPlayer.id,
+            damage,
+            remainingHealth: targetPlayer.health,
+            weaponType: weaponType || null,
+            wasFatal: !!wasFatal
         });
+
+        if (wasFatal) {
+            this.handlePlayerDeath(targetPlayer, attackerId);
+        }
+    }
+
+    handlePlayerDeath(player, killerId = null) {
+        if (this.matchOver) {
+            return;
+        }
+
+        this.matchOver = true;
+
+        player.health = 0;
+        player.isEliminated = true;
+        player.velocity = { x: 0, y: 0, z: 0 };
+
+        let winnerId = null;
+        if (killerId && killerId !== player.id) {
+            winnerId = killerId;
+        } else {
+            for (const other of this.players.values()) {
+                if (other.id !== player.id && other.health > 0) {
+                    winnerId = other.id;
+                    break;
+                }
+            }
+        }
+
+        const resolvedKillerId = killerId && killerId !== player.id ? killerId : winnerId;
+
+        this.io.to(this.roomId).emit(MESSAGE_TYPES.PLAYER_DIED, {
+            playerId: player.id,
+            killerId: resolvedKillerId || null
+        });
+
+        this.io.to(this.roomId).emit(MESSAGE_TYPES.MATCH_RESULT, {
+            winnerId: winnerId || null,
+            loserId: player.id,
+            killerId: resolvedKillerId || null
+        });
+
+        // Stop any remaining projectiles
+        this.projectiles = [];
+
+        // Broadcast final state to ensure clients sync
+        this.broadcastGameState();
     }
 
     getGameState() {

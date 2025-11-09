@@ -71,6 +71,8 @@ export class PlayerEntity {
         this.reloadTimer = 0;
         this.shootCooldown = 0;
         this.lastShootInput = false; // Track previous shoot state for semi-auto weapons
+        this._debugLastShootLog = 0;
+        this._debugLastRaycastLog = 0;
     }
 
     updateInput(inputData) {
@@ -130,14 +132,14 @@ export class PlayerEntity {
         console.log('  Test Forward (90? yaw):', testRot90); // Should be {x: -1, z: 0}
     }
 
-    update(deltaTime, otherPlayers = [], collisionManager = null, onShoot = null) {
+    update(deltaTime, otherPlayers = [], collisionManager = null, onShoot = null, onPlayerHit = null) {
         // Use provided collision manager or instance one
         if (collisionManager) {
             this.collisionManager = collisionManager;
         }
         
         // Update weapon state
-        this.updateWeapon(deltaTime, otherPlayers, onShoot);
+        this.updateWeapon(deltaTime, otherPlayers, onShoot, onPlayerHit);
         
         // Update crouch state
         this.isCrouched = this.input.crouch;
@@ -266,7 +268,7 @@ export class PlayerEntity {
         this.position.z = Math.max(-90, Math.min(90, this.position.z));
     }
 
-    updateWeapon(deltaTime, otherPlayers, onShoot) {
+    updateWeapon(deltaTime, otherPlayers, onShoot, onPlayerHit) {
         // Map weapon name to weapon constant key
         const weaponMap = {
             'pistol': 'PISTOL',
@@ -304,12 +306,20 @@ export class PlayerEntity {
             if (weapon.FIRE_MODE === 'auto') {
                 // Auto-fire: shoot while button is held
                 if (wantsToShoot) {
-                    this.shoot(weapon, ammoState, otherPlayers, onShoot);
+                    if (Date.now() - this._debugLastShootLog > 1000) {
+                        console.log(`[Shoot] Player ${this.id} auto-fire request. Ammo: ${ammoState.ammo}`);
+                        this._debugLastShootLog = Date.now();
+                    }
+                    this.shoot(weapon, ammoState, otherPlayers, onShoot, onPlayerHit);
                 }
             } else if (weapon.FIRE_MODE === 'semi-auto') {
                 // Semi-auto: shoot once per button press
                 if (wantsToShoot && !this.lastShootInput) {
-                    this.shoot(weapon, ammoState, otherPlayers, onShoot);
+                    if (Date.now() - this._debugLastShootLog > 1000) {
+                        console.log(`[Shoot] Player ${this.id} semi-auto trigger. Ammo: ${ammoState.ammo}`);
+                        this._debugLastShootLog = Date.now();
+                    }
+                    this.shoot(weapon, ammoState, otherPlayers, onShoot, onPlayerHit);
                 }
             }
             
@@ -317,7 +327,7 @@ export class PlayerEntity {
         }
     }
 
-    shoot(weapon, ammoState, otherPlayers, onShoot) {
+    shoot(weapon, ammoState, otherPlayers, onShoot, onPlayerHit) {
         if (ammoState.ammo <= 0 || this.shootCooldown > 0 || this.isReloading) {
             return false;
         }
@@ -327,7 +337,7 @@ export class PlayerEntity {
         
         if (weapon.PROJECTILE_TYPE === 'raycast') {
             // Perform raycast hit
-            this.performRaycast(weapon, otherPlayers);
+            this.performRaycast(weapon, otherPlayers, onPlayerHit);
         } else if (weapon.PROJECTILE_TYPE === 'projectile' && onShoot) {
             // Create projectile
             const direction = this.getShootDirection();
@@ -342,7 +352,7 @@ export class PlayerEntity {
                 z: direction.z * 20
             };
             
-            onShoot(spawnPosition, velocity, weapon.DAMAGE, this.id);
+            onShoot(spawnPosition, velocity, weapon.DAMAGE, this.id, this.currentWeapon);
         }
         
         return true;
@@ -354,48 +364,77 @@ export class PlayerEntity {
         const yaw = this.rotation.yaw;
         
         return {
-            x: Math.sin(yaw) * Math.cos(pitch),
+            x: -Math.sin(yaw) * Math.cos(pitch),
             y: -Math.sin(pitch),
-            z: Math.cos(yaw) * Math.cos(pitch)
+            z: -Math.cos(yaw) * Math.cos(pitch)
         };
     }
 
-    performRaycast(weapon, otherPlayers) {
-        // Simple raycast implementation - check line of sight to other players
+    performRaycast(weapon, otherPlayers, onPlayerHit) {
         const direction = this.getShootDirection();
-        const maxDistance = 100; // Raycast range
-        
-        // Check for hits on other players
+        const dirLength = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z) || 1;
+        direction.x /= dirLength;
+        direction.y /= dirLength;
+        direction.z /= dirLength;
+
+        const maxDistance = 100;
+        const playerRadius = PLAYER.PLAYER_RADIUS + 0.35;
+        const originX = this.position.x;
+        const originY = this.position.y;
+        const originZ = this.position.z;
+        const stepSize = 0.1;
+
         for (const player of otherPlayers) {
             if (player.health <= 0) continue;
-            
-            // Calculate vector from shooter to target
-            const dx = player.position.x - this.position.x;
-            const dy = player.position.y - this.position.y;
-            const dz = player.position.z - this.position.z;
-            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            
-            if (distance > maxDistance) continue;
-            
-            // Normalize direction to target
-            const toTargetX = dx / distance;
-            const toTargetY = dy / distance;
-            const toTargetZ = dz / distance;
-            
-            // Check if direction aligns with shoot direction (simple dot product check)
-            const dot = direction.x * toTargetX + direction.y * toTargetY + direction.z * toTargetZ;
-            
-            // Consider it a hit if angle is small (within ~10 degrees)
-            if (dot > 0.98 && distance < maxDistance) {
-                // Apply damage
-                player.takeDamage(weapon.DAMAGE);
-                break; // Only hit one target per shot
+
+            const playerHeight = player.isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
+            const topY = player.position.y;
+            const bottomY = player.position.y - playerHeight;
+            const radiusSq = playerRadius * playerRadius;
+
+            for (let t = 0; t <= maxDistance; t += stepSize) {
+                const px = originX + direction.x * t;
+                const py = originY + direction.y * t;
+                const pz = originZ + direction.z * t;
+
+                if (py < bottomY - playerRadius || py > topY + playerRadius) {
+                    continue;
+                }
+
+                const dx = px - player.position.x;
+                const dz = pz - player.position.z;
+                if (dx * dx + dz * dz <= radiusSq) {
+                    const wasFatal = player.takeDamage(weapon.DAMAGE);
+
+                    if (onPlayerHit) {
+                        onPlayerHit({
+                            attackerId: this.id,
+                            targetId: player.id,
+                            damage: weapon.DAMAGE,
+                            weaponType: this.currentWeapon,
+                            wasFatal
+                        });
+                    }
+
+                    if (Date.now() - this._debugLastRaycastLog > 1000) {
+                        console.log(`[Raycast Hit] ${this.id} -> ${player.id}, damage ${weapon.DAMAGE}, fatal: ${wasFatal}`);
+                        this._debugLastRaycastLog = Date.now();
+                    }
+                    return;
+                }
             }
+        }
+
+        if (Date.now() - this._debugLastRaycastLog > 2000) {
+            console.log(`[Raycast Miss] Player ${this.id} shot but no hit detected.`);
+            this._debugLastRaycastLog = Date.now();
         }
     }
 
     takeDamage(amount) {
+        const previousHealth = this.health;
         this.health = Math.max(0, this.health - amount);
+        return previousHealth > 0 && this.health === 0;
     }
 
     respawn() {

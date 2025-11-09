@@ -38,10 +38,15 @@ export function init() {
     stats.style.fontSize = '24px';
     stats.style.color = 'white';
     stats.style.fontFamily = 'monospace';
-    stats.style.marginBottom = '40px';
+    stats.style.marginBottom = '60px';
     stats.style.textAlign = 'center';
+    const defeatedBy = gameState.matchKillerId
+        ? `Eliminated by ${gameState.matchKillerId}`
+        : 'Try again soon!';
+
     stats.innerHTML = `
-        <div>Kills: ${gameState.kills}</div>
+        <div>${defeatedBy}</div>
+        <div style="margin-top: 10px;">Kills: ${gameState.kills}</div>
     `;
     uiContainer.appendChild(stats);
     
@@ -49,7 +54,7 @@ export function init() {
     const menuButton = createButton(
         'MAIN MENU',
         window.innerWidth / 2 - 150,
-        window.innerHeight / 2 + 50,
+        window.innerHeight / 2 + 90,
         300,
         60,
         () => {

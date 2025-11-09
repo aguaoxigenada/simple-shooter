@@ -27,6 +27,8 @@ class NetworkClient {
         this.onError = null;
         this.onTargetDestroyed = null;
         this.onTargetState = null;
+        this.onMatchResult = null;
+        this.onPlayerHit = null;
     }
 
     connect(playerName = 'Player', autoReconnect = true) {
@@ -187,6 +189,26 @@ class NetworkClient {
                 }
             } catch (error) {
                 console.error('Error handling target destroyed:', error);
+            }
+        });
+
+        this.socket.on(MESSAGE_TYPES.MATCH_RESULT, (data) => {
+            try {
+                if (this.onMatchResult) {
+                    this.onMatchResult(data);
+                }
+            } catch (error) {
+                console.error('Error handling match result:', error);
+            }
+        });
+
+        this.socket.on(MESSAGE_TYPES.PLAYER_HIT, (data) => {
+            try {
+                if (this.onPlayerHit) {
+                    this.onPlayerHit(data);
+                }
+            } catch (error) {
+                console.error('Error handling player hit:', error);
             }
         });
     }

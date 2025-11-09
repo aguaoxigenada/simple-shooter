@@ -101,6 +101,52 @@ function setupNetworkCallbacks() {
 
         removeTargetById(data.targetId, { awardKill: false });
     };
+
+    networkClient.onMatchResult = (data) => {
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+
+        gameState.matchResult = data;
+        gameState.matchKillerId = data.killerId || null;
+
+        const localId = playerManager.localPlayerId;
+        if (!localId) {
+            return;
+        }
+
+        if (data.winnerId === localId) {
+            gameState.matchOutcome = 'victory';
+            gameState.matchOpponentId = data.loserId || null;
+            switchScene(SCENES.VICTORY);
+        } else if (data.loserId === localId) {
+            gameState.matchOutcome = 'defeat';
+            gameState.matchOpponentId = data.winnerId || null;
+            switchScene(SCENES.GAME_OVER);
+        } else {
+            gameState.matchOutcome = null;
+            gameState.matchOpponentId = null;
+        }
+    };
+
+    networkClient.onPlayerHit = (data) => {
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+
+        const { targetId, remainingHealth } = data;
+        if (!targetId || typeof remainingHealth !== 'number') {
+            return;
+        }
+
+        const player = playerManager.players.get(targetId);
+        if (player) {
+            player.health = remainingHealth;
+            if (player.isLocalPlayer) {
+                gameState.health = Math.max(0, remainingHealth);
+            }
+        }
+    };
 }
 
 export function init() {
@@ -112,6 +158,14 @@ export function init() {
     gameState.isMouseLocked = false;
     gameState.stamina = 100;
     gameState.currentWeapon = null;
+    gameState.matchOutcome = null;
+    gameState.matchResult = null;
+    gameState.matchOpponentId = null;
+    gameState.matchKillerId = null;
+    playerManager.players.clear();
+    playerManager.renderers.forEach(renderer => renderer.dispose());
+    playerManager.renderers.clear();
+    playerManager.localPlayerId = null;
     victoryTriggered = false;
     
     // Clear scene (but keep background and fog settings)
@@ -257,6 +311,15 @@ export function cleanup() {
     for (const playerId of allPlayerIds) {
         playerManager.removePlayer(playerId);
     }
+
+    networkClient.onGameStateUpdate = null;
+    networkClient.onPlayerJoined = null;
+    networkClient.onPlayerLeft = null;
+    networkClient.onPlayerSpawned = null;
+    networkClient.onTargetDestroyed = null;
+    networkClient.onTargetState = null;
+    networkClient.onMatchResult = null;
+    networkClient.onPlayerHit = null;
     
     // Cleanup weapon viewmodel
     cleanupWeaponViewModel();

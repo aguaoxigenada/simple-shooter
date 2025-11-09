@@ -78,10 +78,16 @@ export class ClientPlayerEntity {
             }
         }
         
-        this.health = serverState.health || this.health;
-        this.stamina = serverState.stamina || this.stamina;
-        this.isCrouched = serverState.isCrouched || false;
-        this.currentWeapon = serverState.currentWeapon || this.currentWeapon;
+        if (typeof serverState.health === 'number') {
+            this.health = serverState.health;
+        }
+        if (typeof serverState.stamina === 'number') {
+            this.stamina = serverState.stamina;
+        }
+        this.isCrouched = !!serverState.isCrouched;
+        if (serverState.currentWeapon) {
+            this.currentWeapon = serverState.currentWeapon;
+        }
         
         this.updateTime = currentTime;
     }
