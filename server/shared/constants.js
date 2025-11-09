@@ -1,7 +1,7 @@
-// Shared game constants used by both client and server
-// These must match exactly to ensure consistent game behavior
+// Shared constants for server - should match client constants
+// In production, these would come from a shared npm package
 // 
-// ?? WARNING: This file must stay synchronized with server/shared/constants.js
+// ?? WARNING: This file must stay synchronized with src/shared/constants.js
 // When modifying constants, update BOTH files to ensure consistency.
 // Consider using a shared package or build-time sync in the future.
 
@@ -15,8 +15,8 @@ export const PLAYER = {
     CROUCH_HEIGHT: 0.8,
     PLAYER_RADIUS: 0.4,
     CROUCH_SPEED_MULTIPLIER: 0.5,
-    STAMINA_DEPLETION_RATE: 40, // per second
-    STAMINA_RECOVERY_RATE: 20, // per second
+    STAMINA_DEPLETION_RATE: 40,
+    STAMINA_RECOVERY_RATE: 20,
     MOUSE_SENSITIVITY: 0.002,
     MAX_HEALTH: 100,
     MAX_STAMINA: 100
@@ -43,7 +43,7 @@ export const WEAPON = {
         RELOAD_TIME: 2.0
     },
     ROCKET_LAUNCHER: {
-        DAMAGE: 100, // Base damage, actual is area-based
+        DAMAGE: 100,
         FIRE_RATE: 1.5,
         AMMO_CAPACITY: 1,
         AMMO_TOTAL: 5,
@@ -56,7 +56,7 @@ export const WEAPON = {
 // Projectile constants
 export const PROJECTILE = {
     ROCKET_SPEED: 20,
-    ROCKET_LIFETIME: 5, // seconds
+    ROCKET_LIFETIME: 5,
     EXPLOSION_RADIUS: 3,
     GRAVITY: -9.8
 };
@@ -65,8 +65,8 @@ export const PROJECTILE = {
 export const GAME = {
     TICK_RATE: 30, // Server ticks per second
     NETWORK_UPDATE_RATE: 30, // Network updates per second (increased from 20 for better responsiveness)
-    INTERPOLATION_BUFFER: 0.1, // seconds to buffer for interpolation
-    MAX_LAG_COMPENSATION: 0.2 // seconds of lag compensation
+    INTERPOLATION_BUFFER: 0.1,
+    MAX_LAG_COMPENSATION: 0.2
 };
 
 // Network message types
@@ -83,3 +83,12 @@ export const MESSAGE_TYPES = {
     PLAYER_SPAWNED: 'player_spawned',
     PLAYER_DIED: 'player_died'
 };
+
+// Input validation limits
+export const INPUT_LIMITS = {
+    MAX_MOUSE_DELTA: 1000, // Maximum mouse movement per frame
+    MAX_INPUT_RATE: 60, // Maximum inputs per second
+    MAX_NAME_LENGTH: 32,
+    MIN_NAME_LENGTH: 1
+};
+

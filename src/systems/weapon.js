@@ -4,6 +4,7 @@ import { gameState } from '../core/gameState.js';
 import { targets } from '../entities/targets.js';
 import { createRocket } from './projectile.js';
 import { WEAPON } from '../shared/constants.js';
+import { networkClient } from '../network/client.js';
 
 // Weapon definitions
 export const WEAPON_TYPES = {
@@ -26,7 +27,7 @@ const weapons = {
     [WEAPON_TYPES.ROCKET_LAUNCHER]: {
         name: 'Rocket Launcher',
         ...WEAPON.ROCKET_LAUNCHER,
-        ammo: WEAPON.ROCKET_LAUNCHER.AMMO
+        ammo: WEAPON.ROCKET_LAUNCHER.AMMO_TOTAL
     }
 };
 
@@ -198,13 +199,31 @@ export function updateWeapon(deltaTime) {
     // Handle auto-fire or semi-auto
     let shotFired = false;
     if (isShooting && !isReloading && shootCooldown <= 0) {
-        if (weapon.fireMode === 'auto') {
-            shotFired = shoot();
-        } else if (weapon.fireMode === 'semi-auto') {
-            // For semi-auto, shoot once and then stop shooting until mouse is released and pressed again
-            shotFired = shoot();
-            // Don't allow shooting again until mouse is released
-            isShooting = false;
+        if (networkClient.isConnected) {
+            // In multiplayer, send input to server (server is authoritative)
+            networkClient.sendInput({
+                shoot: true,
+                weaponType: gameState.currentWeapon
+            });
+            // Still trigger visual feedback (muzzle flash) for immediate response
+            // But don't actually create projectiles/hits - server handles that
+            shotFired = true; // For visual feedback only
+            shootCooldown = weapon.fireRate; // Prevent spam
+            
+            // For semi-auto, stop shooting after first shot
+            if (weapon.fireMode === 'semi-auto') {
+                isShooting = false;
+            }
+        } else {
+            // Single player mode - handle locally
+            if (weapon.fireMode === 'auto') {
+                shotFired = shoot();
+            } else if (weapon.fireMode === 'semi-auto') {
+                // For semi-auto, shoot once and then stop shooting until mouse is released and pressed again
+                shotFired = shoot();
+                // Don't allow shooting again until mouse is released
+                isShooting = false;
+            }
         }
     }
     

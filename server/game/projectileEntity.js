@@ -1,11 +1,5 @@
 // Server-side projectile entity
-// Constants - in production, use shared package
-const PROJECTILE = {
-    ROCKET_SPEED: 20,
-    ROCKET_LIFETIME: 5,
-    EXPLOSION_RADIUS: 3,
-    GRAVITY: -9.8
-};
+import { PROJECTILE } from '../shared/constants.js';
 
 export class ProjectileEntity {
     constructor(id, position, velocity, damage, ownerId) {

@@ -1,13 +1,6 @@
 // Authoritative game server - runs the actual game logic
 import { GameRoom } from './gameRoom.js';
-
-// Constants - in production, use shared package
-const GAME = {
-    TICK_RATE: 30,
-    NETWORK_UPDATE_RATE: 20,
-    INTERPOLATION_BUFFER: 0.1,
-    MAX_LAG_COMPENSATION: 0.2
-};
+import { GAME } from '../shared/constants.js';
 
 export class GameServer {
     constructor(io) {
@@ -28,17 +21,35 @@ export class GameServer {
     }
 
     startGameLoop() {
+        // Fixed timestep game loop for consistent physics
+        const targetDeltaTime = 1 / GAME.TICK_RATE;
+        let accumulatedTime = 0;
+        
         const tick = () => {
             const now = Date.now();
-            const deltaTime = Math.min((now - this.lastTick) / 1000, 0.1); // Cap at 100ms
+            const realDeltaTime = Math.min((now - this.lastTick) / 1000, 0.1); // Cap at 100ms
             this.lastTick = now;
+            accumulatedTime += realDeltaTime;
             
-            // Update all rooms
-            for (const room of this.rooms.values()) {
-                room.update(deltaTime);
+            // Update with fixed timestep
+            while (accumulatedTime >= targetDeltaTime) {
+                // Update all rooms with fixed delta time
+                for (const room of this.rooms.values()) {
+                    try {
+                        room.update(targetDeltaTime);
+                    } catch (error) {
+                        console.error(`Error updating room ${room.roomId}:`, error);
+                    }
+                }
+                accumulatedTime -= targetDeltaTime;
             }
             
-            setTimeout(tick, this.tickInterval);
+            // Use setImmediate for better timing, fallback to setTimeout
+            if (typeof setImmediate !== 'undefined') {
+                setImmediate(tick);
+            } else {
+                setTimeout(tick, this.tickInterval);
+            }
         };
         
         tick();

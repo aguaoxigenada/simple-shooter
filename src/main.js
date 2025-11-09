@@ -18,10 +18,42 @@ switchScene(SCENES.MAIN_MENU);
 // Animation loop
 const clock = new THREE.Clock();
 
+// Performance settings
+const TARGET_FPS = 60;
+const MAX_DELTA_TIME = 0.1; // Cap at 100ms to prevent physics explosions
+const MIN_DELTA_TIME = 1 / 120; // Cap at 120 FPS max (prevents running too fast)
+
+let lastFrameTime = performance.now();
+let frameCount = 0;
+let fps = 0;
+let lastFpsUpdate = performance.now();
+
 function animate() {
     requestAnimationFrame(animate);
     
-    const deltaTime = clock.getDelta();
+    const now = performance.now();
+    const rawDeltaTime = clock.getDelta();
+    
+    // Clamp deltaTime to prevent physics issues
+    const deltaTime = Math.max(MIN_DELTA_TIME, Math.min(rawDeltaTime, MAX_DELTA_TIME));
+    
+    // Optional: FPS limiting (uncomment if needed for consistent frame timing)
+    // const targetFrameTime = 1000 / TARGET_FPS;
+    // const elapsed = now - lastFrameTime;
+    // if (elapsed < targetFrameTime) {
+    //     return; // Skip frame to maintain target FPS
+    // }
+    // lastFrameTime = now;
+    
+    // FPS calculation (for debugging - uncomment to see FPS in console)
+    frameCount++;
+    if (now - lastFpsUpdate >= 1000) {
+        fps = frameCount;
+        frameCount = 0;
+        lastFpsUpdate = now;
+        // Uncomment to see FPS in console:
+        // console.log(`FPS: ${fps}`);
+    }
     
     // Update current scene
     updateScene(deltaTime);

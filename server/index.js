@@ -6,10 +6,19 @@ import { GameServer } from './game/gameServer.js';
 
 const app = express();
 const httpServer = createServer(app);
+
+// CORS configuration - use environment variable in production
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+    : (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://localhost:3000']);
+
 const io = new Server(httpServer, {
     cors: {
-        origin: "*", // In production, specify your client URL
-        methods: ["GET", "POST"]
+        origin: process.env.NODE_ENV === 'production' && allowedOrigins.length > 0
+            ? allowedOrigins
+            : "*", // Allow all in development
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 

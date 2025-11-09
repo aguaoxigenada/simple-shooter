@@ -6,17 +6,25 @@ import { initEnvironment } from '../world/environment.js';
 import { initTargets, targets } from '../entities/targets.js';
 import { initPlayerControls, updatePlayer } from '../entities/player.js';
 import { initWeapon, updateWeapon } from '../systems/weapon.js';
-import { updateProjectiles } from '../systems/projectile.js';
+import { updateProjectiles, cleanupProjectiles } from '../systems/projectile.js';
 import { updateUI } from '../systems/ui.js';
 import { initWeaponViewModel, updateWeaponViewModel, triggerMuzzleFlash, cleanupWeaponViewModel } from '../entities/weaponViewModel.js';
 import { networkClient } from '../network/client.js';
 import { playerManager } from '../network/playerManager.js';
-import { MESSAGE_TYPES } from '../shared/constants.js';
+import { MESSAGE_TYPES, PLAYER } from '../shared/constants.js';
 
 let isInitialized = false;
 let victoryTriggered = false;
+let ambientLight = null;
+let directionalLight = null;
 
 function setupNetworkCallbacks() {
+    // Error handling
+    networkClient.onError = (message, error) => {
+        console.error(`Network error: ${message}`, error);
+        // Could show UI notification here
+    };
+    
     // Game state updates from server
     networkClient.onGameStateUpdate = (serverGameState) => {
         // Update all players from server state
@@ -31,12 +39,6 @@ function setupNetworkCallbacks() {
                 }
                 
                 playerManager.updatePlayerFromServer(playerId, playerState);
-                
-                // If this is the local player, sync camera position
-                if (isLocal) {
-                    const pos = playerState.position;
-                    camera.position.set(pos.x, pos.y, pos.z);
-                }
             }
             
             // Remove players that are no longer in the game
@@ -59,7 +61,12 @@ function setupNetworkCallbacks() {
     networkClient.onPlayerSpawned = (data) => {
         console.log('Local player spawned:', data.playerId);
         playerManager.setLocalPlayerId(data.playerId);
-        playerManager.addPlayer(data.playerId, true);
+        const player = playerManager.addPlayer(data.playerId, true);
+        
+        // Initialize player position from spawn data
+        if (data.position) {
+            player.setPosition(data.position.x, data.position.y, data.position.z);
+        }
     };
     
     // Player left
@@ -90,10 +97,10 @@ export function init() {
     victoryTriggered = false;
     
     // Clear scene (but keep background and fog settings)
-    // Remove all objects but preserve scene properties
+    // Remove all objects but preserve scene properties and lights
     const objectsToRemove = [];
     scene.traverse((object) => {
-        if (object !== scene) {
+        if (object !== scene && object !== ambientLight && object !== directionalLight) {
             objectsToRemove.push(object);
         }
     });
@@ -103,20 +110,29 @@ export function init() {
     scene.background = new THREE.Color(0x87CEEB);
     scene.fog = new THREE.Fog(0x87CEEB, 0, 500);
     
-    // Re-add lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
+    // Ensure lighting exists (reuse if exists, otherwise create new)
+    if (!ambientLight) {
+        ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+    } else if (!scene.children.includes(ambientLight)) {
+        scene.add(ambientLight);
+    }
     
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(50, 100, 50);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.camera.left = -100;
-    directionalLight.shadow.camera.right = 100;
-    directionalLight.shadow.camera.top = 100;
-    directionalLight.shadow.camera.bottom = -100;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    scene.add(directionalLight);
+    if (!directionalLight) {
+        directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(50, 100, 50);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.camera.left = -100;
+        directionalLight.shadow.camera.right = 100;
+        directionalLight.shadow.camera.top = 100;
+        directionalLight.shadow.camera.bottom = -100;
+        directionalLight.shadow.mapSize.width = 1024; // Reduced from 2048 for better performance
+        directionalLight.shadow.mapSize.height = 1024; // Reduced from 2048 for better performance
+        directionalLight.shadow.bias = -0.0001; // Reduce shadow acne
+        scene.add(directionalLight);
+    } else if (!scene.children.includes(directionalLight)) {
+        scene.add(directionalLight);
+    }
     
     // Reset camera position
     camera.position.set(3, 1.6, 3);
@@ -133,7 +149,7 @@ export function init() {
     
     // Connect to multiplayer server (optional - can be disabled for single player)
     // Uncomment to enable multiplayer:
-    // networkClient.connect('Player');
+    networkClient.connect('Player');
     
     isInitialized = true;
     
@@ -163,8 +179,14 @@ export function init() {
 export function update(deltaTime) {
     if (!isInitialized) return;
     
-    // Update player
+    // Update player (handles input and client-side prediction)
     updatePlayer(deltaTime);
+    
+    // Update network players (this handles interpolation)
+    playerManager.updateAll(deltaTime);
+    
+    // Camera position is fully handled in updatePlayer() for both single and multiplayer
+    // No need to override it here - doing so would cause conflicts with client-side prediction
     
     // Update weapon (returns true if shot was fired)
     const shotFired = updateWeapon(deltaTime);
@@ -179,9 +201,6 @@ export function update(deltaTime) {
     
     // Update projectiles (rockets)
     updateProjectiles(deltaTime);
-    
-    // Update network players
-    playerManager.updateAll(deltaTime);
     
     // Update UI
     updateUI();
@@ -210,12 +229,28 @@ export function render(rendererInstance, cameraInstance, sceneInstance) {
 
 export function cleanup() {
     isInitialized = false;
+    victoryTriggered = false;
     
     // Disconnect from server
     networkClient.disconnect();
     
+    // Cleanup network players
+    const allPlayerIds = Array.from(playerManager.players.keys());
+    for (const playerId of allPlayerIds) {
+        playerManager.removePlayer(playerId);
+    }
+    
     // Cleanup weapon viewmodel
     cleanupWeaponViewModel();
+    
+    // Cleanup projectiles
+    cleanupProjectiles();
+    
+    // Cleanup targets (if any remain)
+    // Note: Targets are managed in targets.js, but they're already removed when destroyed
+    
+    // Remove event listeners from renderer
+    // Note: We should store references to listeners to remove them properly
     
     // Hide game UI
     const gameUI = document.getElementById('ui');

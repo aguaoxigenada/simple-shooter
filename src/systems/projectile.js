@@ -156,3 +156,12 @@ export function updateProjectiles(deltaTime) {
         }
     }
 }
+
+export function cleanupProjectiles() {
+    // Remove all projectiles from scene
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        const rocket = projectiles[i];
+        scene.remove(rocket);
+        projectiles.splice(i, 1);
+    }
+}

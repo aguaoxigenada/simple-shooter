@@ -79,17 +79,18 @@ export class CollisionManager {
 
     resolveCollision(oldX, oldZ, newX, newZ, radius, height) {
         // Try to slide along walls
-        // First try X movement
-        if (!this.checkCollision(newX, height / 2, oldZ, radius, height)) {
-            return { x: newX, z: oldZ };
+        const baseY = height / 2;
+        let resolvedX = oldX;
+        let resolvedZ = oldZ;
+
+        if (!this.checkCollision(newX, baseY, oldZ, radius, height)) {
+            resolvedX = newX;
         }
-        
-        // Then try Z movement
-        if (!this.checkCollision(oldX, height / 2, newZ, radius, height)) {
-            return { x: oldX, z: newZ };
+
+        if (!this.checkCollision(resolvedX, baseY, newZ, radius, height)) {
+            resolvedZ = newZ;
         }
-        
-        // If both fail, don't move
-        return { x: oldX, z: oldZ };
+
+        return { x: resolvedX, z: resolvedZ };
     }
 }

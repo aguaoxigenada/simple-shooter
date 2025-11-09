@@ -16,10 +16,14 @@ export const camera = new THREE.PerspectiveCamera(
 camera.position.set(3, 1.6, 3); // Eye level - safe starting position
 
 // Renderer
-export const renderer = new THREE.WebGLRenderer({ antialias: true });
+export const renderer = new THREE.WebGLRenderer({ 
+    antialias: true,
+    powerPreference: "high-performance" // Prefer GPU performance over quality
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.BasicShadowMap; // Changed from PCFSoftShadowMap for better performance
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
 document.getElementById("canvas-container").appendChild(renderer.domElement);
 
 // Lighting
@@ -33,8 +37,9 @@ directionalLight.shadow.camera.left = -100;
 directionalLight.shadow.camera.right = 100;
 directionalLight.shadow.camera.top = 100;
 directionalLight.shadow.camera.bottom = -100;
-directionalLight.shadow.mapSize.width = 2048;
-directionalLight.shadow.mapSize.height = 2048;
+directionalLight.shadow.mapSize.width = 1024; // Reduced from 2048 for better performance
+directionalLight.shadow.mapSize.height = 1024; // Reduced from 2048 for better performance
+directionalLight.shadow.bias = -0.0001; // Reduce shadow acne
 scene.add(directionalLight);
 
 // Lock pointer on click

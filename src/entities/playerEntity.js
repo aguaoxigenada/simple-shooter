@@ -27,6 +27,7 @@ export class ClientPlayerEntity {
         
         // Client-side prediction (only for local player)
         this.predictedPosition = new THREE.Vector3();
+        this.serverPosition = new THREE.Vector3();
         this.usePrediction = isLocalPlayer;
     }
 
@@ -35,18 +36,46 @@ export class ClientPlayerEntity {
         this.previousPosition.copy(this.position);
         this.lastUpdateTime = this.updateTime;
         
-        // Update target state
+        // Update target state from server
         if (serverState.position) {
             this.targetPosition.set(
                 serverState.position.x,
                 serverState.position.y,
                 serverState.position.z
             );
+            
+            // For local player, update predicted position for client-side prediction
+            if (this.usePrediction) {
+                // Store server position as correction
+                // Only update if we have a valid position (not first frame)
+                if (this.serverPosition.lengthSq() === 0 || 
+                    this.targetPosition.distanceTo(this.serverPosition) > 0.01) {
+                    // Only update server position if it actually changed (avoid micro-updates)
+                    this.serverPosition = this.targetPosition.clone();
+                }
+                
+                // Only snap for very large desyncs (anti-cheat/desync correction)
+                // The client will smoothly correct smaller differences
+                const positionDiff = this.predictedPosition.distanceTo(this.serverPosition);
+                if (positionDiff > 3.0) { // If more than 3 units difference, snap (increased threshold)
+                    // Large desync detected - snap to server position
+                    this.predictedPosition.copy(this.serverPosition);
+                    this.position.copy(this.serverPosition);
+                }
+            } else {
+                // For remote players, just update target for interpolation
+                if (this.position.lengthSq() === 0 || this.updateTime === 0) {
+                    this.position.copy(this.targetPosition);
+                }
+            }
         }
         
         if (serverState.rotation) {
-            this.rotation.yaw = serverState.rotation.yaw;
-            this.rotation.pitch = serverState.rotation.pitch;
+            // Only update rotation if we're not the local player
+            if (!this.isLocalPlayer) {
+                this.rotation.yaw = serverState.rotation.yaw;
+                this.rotation.pitch = serverState.rotation.pitch;
+            }
         }
         
         this.health = serverState.health || this.health;
@@ -55,29 +84,21 @@ export class ClientPlayerEntity {
         this.currentWeapon = serverState.currentWeapon || this.currentWeapon;
         
         this.updateTime = currentTime;
-        
-        // For local player with prediction, blend server correction
-        if (this.usePrediction) {
-            const error = this.targetPosition.distanceTo(this.predictedPosition);
-            // If server position is very different, snap to server (lag spike or desync)
-            if (error > 2.0) {
-                this.position.copy(this.targetPosition);
-                this.predictedPosition.copy(this.targetPosition);
-            } else {
-                // Smoothly correct prediction
-                this.predictedPosition.lerp(this.targetPosition, 0.1);
-                this.position.copy(this.predictedPosition);
-            }
-        }
     }
 
     update(deltaTime, currentTime) {
         if (!this.usePrediction) {
             // Interpolate position for remote players
             const timeSinceUpdate = currentTime - this.updateTime;
-            const interpolateTime = Math.min(timeSinceUpdate / 100, 1); // 100ms interpolation window
+            const interpolationWindow = 100; // 100ms interpolation window
+            const interpolateFactor = Math.min(timeSinceUpdate / interpolationWindow, 1);
             
-            this.position.lerp(this.targetPosition, 0.1); // Smooth interpolation
+            // Smooth interpolation
+            this.position.lerp(this.targetPosition, 0.2 + interpolateFactor * 0.3);
+        } else {
+            // For local player with prediction, we use predicted position
+            // The server correction will happen in updateFromServer
+            this.position.copy(this.predictedPosition);
         }
         
         // Update visual representation if it exists
@@ -91,7 +112,10 @@ export class ClientPlayerEntity {
         this.position.set(x, y, z);
         this.targetPosition.set(x, y, z);
         if (this.usePrediction) {
+            // Initialize predicted position to spawn position
             this.predictedPosition.set(x, y, z);
+            // Initialize server position to same value (will be updated by first server state)
+            this.serverPosition.set(x, y, z);
         }
     }
 
