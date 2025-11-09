@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { scene, camera } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
-import { targets } from '../entities/targets.js';
+import { getTargetFromObject, damageTarget } from '../entities/targets.js';
 import { createRocket } from './projectile.js';
 import { WEAPON } from '../shared/constants.js';
 import { networkClient } from '../network/client.js';
@@ -151,16 +151,15 @@ function shootRaycast(weapon) {
     
     if (intersects.length > 0) {
         const hit = intersects[0];
-        const hitObject = hit.object.parent || hit.object;
+        const hitObject = hit.object;
+        const targetGroup = getTargetFromObject(hitObject);
         
-        if (hitObject.userData && hitObject.userData.type === 'target') {
-            hitObject.userData.health -= weapon.DAMAGE;
+        if (targetGroup) {
+            const targetId = targetGroup.userData.id;
+            const destroyed = damageTarget(targetGroup, weapon.DAMAGE, { awardKill: true });
             
-            if (hitObject.userData.health <= 0) {
-                scene.remove(hitObject);
-                const index = targets.indexOf(hitObject);
-                if (index > -1) targets.splice(index, 1);
-                gameState.kills++;
+            if (destroyed && networkClient.isConnected) {
+                networkClient.sendTargetDestroyed(targetId);
             }
         }
         

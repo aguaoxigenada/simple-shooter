@@ -3,7 +3,7 @@ import { SCENES, switchScene } from '../core/sceneManager.js';
 import { scene, camera, renderer } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
 import { initEnvironment } from '../world/environment.js';
-import { initTargets, targets } from '../entities/targets.js';
+import { initTargets, targets, removeTargetById } from '../entities/targets.js';
 import { initPlayerControls, updatePlayer } from '../entities/player.js';
 import { initWeapon, updateWeapon } from '../systems/weapon.js';
 import { updateProjectiles, cleanupProjectiles } from '../systems/projectile.js';
@@ -82,6 +82,24 @@ function setupNetworkCallbacks() {
         } else {
             console.log('Disconnected from multiplayer server');
         }
+    };
+
+    networkClient.onTargetState = (data) => {
+        if (!data || !Array.isArray(data.destroyedTargets)) {
+            return;
+        }
+
+        for (const targetId of data.destroyedTargets) {
+            removeTargetById(targetId, { awardKill: false });
+        }
+    };
+
+    networkClient.onTargetDestroyed = (data) => {
+        if (!data || typeof data.targetId !== 'string') {
+            return;
+        }
+
+        removeTargetById(data.targetId, { awardKill: false });
     };
 }
 

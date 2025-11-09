@@ -75,13 +75,15 @@ export const MESSAGE_TYPES = {
     PLAYER_INPUT: 'player_input',
     PLAYER_CONNECT: 'player_connect',
     PLAYER_DISCONNECT: 'player_disconnect',
+    TARGET_DESTROYED: 'target_destroyed',
     
     // Server to Client
     GAME_STATE: 'game_state',
     PLAYER_JOINED: 'player_joined',
     PLAYER_LEFT: 'player_left',
     PLAYER_SPAWNED: 'player_spawned',
-    PLAYER_DIED: 'player_died'
+    PLAYER_DIED: 'player_died',
+    TARGET_STATE: 'target_state'
 };
 
 // Input validation limits

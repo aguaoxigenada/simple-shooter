@@ -4,6 +4,15 @@ import { CollisionManager } from '../world/collision.js';
 import { ProjectileEntity } from './projectileEntity.js';
 import { MESSAGE_TYPES, GAME, INPUT_LIMITS } from '../shared/constants.js';
 
+const VALID_TARGET_IDS = new Set([
+    'target-east',
+    'target-west',
+    'target-north',
+    'target-south',
+    'target-northeast',
+    'target-southwest'
+]);
+
 export class GameRoom {
     constructor(roomId, io) {
         this.roomId = roomId;
@@ -16,6 +25,7 @@ export class GameRoom {
         
         // Input rate limiting per player
         this.playerInputRates = new Map(); // socketId -> { count: number, resetTime: number }
+        this.destroyedTargets = new Set();
     }
 
     addPlayer(socket) {
@@ -43,10 +53,19 @@ export class GameRoom {
         
         // Send current game state to new player
         socket.emit(MESSAGE_TYPES.GAME_STATE, this.getGameState());
+
+        // Send current target destruction state
+        socket.emit(MESSAGE_TYPES.TARGET_STATE, {
+            destroyedTargets: Array.from(this.destroyedTargets)
+        });
         
         // Setup input handler for this player
         socket.on(MESSAGE_TYPES.PLAYER_INPUT, (inputData) => {
             this.handlePlayerInput(socket.id, inputData);
+        });
+
+        socket.on(MESSAGE_TYPES.TARGET_DESTROYED, (data) => {
+            this.handleTargetDestroyed(socket.id, data);
         });
     }
 
@@ -179,6 +198,24 @@ export class GameRoom {
         }
         
         return true;
+    }
+
+    handleTargetDestroyed(socketId, data) {
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+
+        const { targetId } = data;
+        if (typeof targetId !== 'string' || targetId.length === 0) {
+            return;
+        }
+
+        if (!VALID_TARGET_IDS.has(targetId) || this.destroyedTargets.has(targetId)) {
+            return;
+        }
+
+        this.destroyedTargets.add(targetId);
+        this.io.to(this.roomId).emit(MESSAGE_TYPES.TARGET_DESTROYED, { targetId });
     }
 
     update(deltaTime) {

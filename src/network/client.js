@@ -25,6 +25,8 @@ class NetworkClient {
         this.onConnectionChange = null;
         this.onPlayerSpawned = null;
         this.onError = null;
+        this.onTargetDestroyed = null;
+        this.onTargetState = null;
     }
 
     connect(playerName = 'Player', autoReconnect = true) {
@@ -167,6 +169,26 @@ class NetworkClient {
                 }
             }
         });
+
+        this.socket.on(MESSAGE_TYPES.TARGET_STATE, (data) => {
+            try {
+                if (this.onTargetState) {
+                    this.onTargetState(data);
+                }
+            } catch (error) {
+                console.error('Error handling target state:', error);
+            }
+        });
+
+        this.socket.on(MESSAGE_TYPES.TARGET_DESTROYED, (data) => {
+            try {
+                if (this.onTargetDestroyed) {
+                    this.onTargetDestroyed(data);
+                }
+            } catch (error) {
+                console.error('Error handling target destroyed:', error);
+            }
+        });
     }
 
     _scheduleReconnect() {
@@ -246,6 +268,24 @@ class NetworkClient {
             playerId: this.playerId,
             socketId: this.socket?.id
         };
+    }
+
+    sendTargetDestroyed(targetId) {
+        if (!this.isConnected || !this.socket || !targetId) {
+            return;
+        }
+
+        try {
+            this.socket.emit(MESSAGE_TYPES.TARGET_DESTROYED, {
+                targetId,
+                timestamp: Date.now()
+            });
+        } catch (error) {
+            console.error('Error sending target destroyed:', error);
+            if (this.onError) {
+                this.onError('Failed to report target destruction', error);
+            }
+        }
     }
 }
 

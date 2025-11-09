@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { scene } from '../core/scene.js';
-import { gameState } from '../core/gameState.js';
-import { targets } from '../entities/targets.js';
+import { targets, damageTarget } from '../entities/targets.js';
 import { collidableObjects } from '../world/environment.js';
+import { networkClient } from '../network/client.js';
 
 // Active projectiles
 export const projectiles = [];
@@ -101,20 +101,19 @@ function createExplosion(position) {
     
     // Area damage
     const explosionRadius = 3;
-    // Iterate backwards to safely remove items from array
-    for (let i = targets.length - 1; i >= 0; i--) {
-        const target = targets[i];
+    // Use snapshot to avoid issues if targets array mutates during iteration
+    const targetsSnapshot = [...targets];
+    for (const target of targetsSnapshot) {
         const distance = target.position.distanceTo(position);
         if (distance <= explosionRadius) {
             // Damage decreases with distance
             const damageMultiplier = 1 - (distance / explosionRadius) * 0.5;
             const damage = Math.floor(100 * damageMultiplier);
-            target.userData.health -= damage;
+            const targetId = target.userData.id;
+            const destroyed = damageTarget(target, damage, { awardKill: true });
             
-            if (target.userData.health <= 0) {
-                scene.remove(target);
-                targets.splice(i, 1);
-                gameState.kills++;
+            if (destroyed && networkClient.isConnected) {
+                networkClient.sendTargetDestroyed(targetId);
             }
         }
     }
