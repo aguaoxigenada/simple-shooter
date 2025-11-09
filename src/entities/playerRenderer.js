@@ -132,7 +132,14 @@ export class PlayerRenderer {
 
     update() {
         // Update position
-        this.group.position.copy(this.entity.position);
+        const playerHeight = this.entity.isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
+        const baseY = this.entity.position.y - playerHeight;
+
+        this.group.position.set(
+            this.entity.position.x,
+            Math.max(0, baseY),
+            this.entity.position.z
+        );
         
         // Update rotation (yaw only for body, pitch for head)
         this.group.rotation.y = this.entity.rotation.yaw;

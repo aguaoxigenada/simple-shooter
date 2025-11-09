@@ -17,17 +17,20 @@ const weapons = {
     [WEAPON_TYPES.PISTOL]: {
         name: 'Pistol',
         ...WEAPON.PISTOL,
-        ammo: WEAPON.PISTOL.AMMO_CAPACITY
+        ammo: WEAPON.PISTOL.AMMO_CAPACITY,
+        ammoTotal: WEAPON.PISTOL.AMMO_TOTAL
     },
     [WEAPON_TYPES.ASSAULT_RIFLE]: {
         name: 'Assault Rifle',
         ...WEAPON.ASSAULT_RIFLE,
-        ammo: WEAPON.ASSAULT_RIFLE.AMMO_CAPACITY
+        ammo: WEAPON.ASSAULT_RIFLE.AMMO_CAPACITY,
+        ammoTotal: WEAPON.ASSAULT_RIFLE.AMMO_TOTAL
     },
     [WEAPON_TYPES.ROCKET_LAUNCHER]: {
         name: 'Rocket Launcher',
         ...WEAPON.ROCKET_LAUNCHER,
-        ammo: WEAPON.ROCKET_LAUNCHER.AMMO_TOTAL
+        ammo: WEAPON.ROCKET_LAUNCHER.AMMO_CAPACITY,
+        ammoTotal: WEAPON.ROCKET_LAUNCHER.AMMO_TOTAL
     }
 };
 
@@ -38,10 +41,22 @@ let isShooting = false;
 let shootCooldown = 0;
 let isReloading = false;
 let reloadTimer = 0;
+let lastShootSentState = false;
 
 export function initWeapon(renderer) {
     // Initialize current weapon
     gameState.currentWeapon = WEAPON_TYPES.ASSAULT_RIFLE;
+    
+    // Reset weapon ammo pools whenever the weapon system is initialized
+    for (const weaponDef of Object.values(weapons)) {
+        weaponDef.ammo = weaponDef.AMMO_CAPACITY;
+        weaponDef.ammoTotal = weaponDef.AMMO_TOTAL;
+    }
+    isShooting = false;
+    shootCooldown = 0;
+    isReloading = false;
+    reloadTimer = 0;
+    lastShootSentState = false;
     
     renderer.domElement.addEventListener('mousedown', (e) => {
         if (e.button === 0 && gameState.isMouseLocked && !isReloading) { // Left click
@@ -52,6 +67,13 @@ export function initWeapon(renderer) {
     renderer.domElement.addEventListener('mouseup', (e) => {
         if (e.button === 0) {
             isShooting = false;
+            if (networkClient.isConnected && lastShootSentState) {
+                networkClient.sendInput({
+                    shoot: false,
+                    weaponType: gameState.currentWeapon
+                });
+                lastShootSentState = false;
+            }
         }
     });
 
@@ -74,6 +96,19 @@ export function initWeapon(renderer) {
                 break;
         }
     });
+
+    window.addEventListener('blur', () => {
+        if (isShooting) {
+            isShooting = false;
+        }
+        if (networkClient.isConnected && lastShootSentState) {
+            networkClient.sendInput({
+                shoot: false,
+                weaponType: gameState.currentWeapon
+            });
+            lastShootSentState = false;
+        }
+    });
 }
 
 function switchWeapon(weaponType) {
@@ -83,6 +118,13 @@ function switchWeapon(weaponType) {
     gameState.currentWeapon = weaponType;
     isShooting = false; // Stop shooting when switching
     shootCooldown = 0;
+    if (networkClient.isConnected && lastShootSentState) {
+        networkClient.sendInput({
+            shoot: false,
+            weaponType
+        });
+        lastShootSentState = false;
+    }
 }
 
 export function getCurrentWeapon() {
@@ -91,13 +133,13 @@ export function getCurrentWeapon() {
 
 function reload() {
     const weapon = getCurrentWeapon();
-    const ammoNeeded = weapon.ammoCapacity - weapon.ammo;
+    const ammoNeeded = weapon.AMMO_CAPACITY - weapon.ammo;
     
     if (ammoNeeded <= 0) return; // Already full
     if (weapon.ammoTotal <= 0) return; // No ammo available
     
     isReloading = true;
-    reloadTimer = weapon.reloadTime;
+    reloadTimer = weapon.RELOAD_TIME;
     
     // Reload happens after delay (handled in updateWeapon)
 }
@@ -112,7 +154,7 @@ function shootRaycast(weapon) {
         const hitObject = hit.object.parent || hit.object;
         
         if (hitObject.userData && hitObject.userData.type === 'target') {
-            hitObject.userData.health -= weapon.damage;
+            hitObject.userData.health -= weapon.DAMAGE;
             
             if (hitObject.userData.health <= 0) {
                 scene.remove(hitObject);
@@ -149,6 +191,10 @@ function shootProjectile(weapon) {
 export function shoot() {
     const weapon = getCurrentWeapon();
     
+    if (!weapon) {
+        return false;
+    }
+    
     if (weapon.ammo <= 0) {
         // Try to auto-reload if possible
         if (weapon.ammoTotal > 0 && !isReloading) {
@@ -161,11 +207,11 @@ export function shoot() {
     if (isReloading) return false;
     
     weapon.ammo--;
-    shootCooldown = weapon.fireRate;
+    shootCooldown = weapon.FIRE_RATE;
     
-    if (weapon.projectileType === 'raycast') {
+    if (weapon.PROJECTILE_TYPE === 'raycast') {
         shootRaycast(weapon);
-    } else if (weapon.projectileType === 'projectile') {
+    } else if (weapon.PROJECTILE_TYPE === 'projectile') {
         shootProjectile(weapon);
     }
     
@@ -174,13 +220,16 @@ export function shoot() {
 
 export function updateWeapon(deltaTime) {
     const weapon = getCurrentWeapon();
+    if (!weapon) {
+        return false;
+    }
     
     // Handle reloading
     if (isReloading) {
         reloadTimer -= deltaTime;
         if (reloadTimer <= 0) {
             // Complete reload
-            const ammoNeeded = weapon.ammoCapacity - weapon.ammo;
+            const ammoNeeded = weapon.AMMO_CAPACITY - weapon.ammo;
             const reloadAmount = Math.min(ammoNeeded, weapon.ammoTotal);
             weapon.ammo += reloadAmount;
             weapon.ammoTotal -= reloadAmount;
@@ -196,35 +245,31 @@ export function updateWeapon(deltaTime) {
         if (shootCooldown < 0) shootCooldown = 0;
     }
     
-    // Handle auto-fire or semi-auto
+    // Handle firing
     let shotFired = false;
     if (isShooting && !isReloading && shootCooldown <= 0) {
-        if (networkClient.isConnected) {
-            // In multiplayer, send input to server (server is authoritative)
+        shotFired = shoot();
+
+        if (shotFired && weapon.FIRE_MODE === 'semi-auto') {
+            // For semi-auto, shoot once and then stop shooting until mouse is released and pressed again
+            isShooting = false;
+        }
+
+        if (shotFired && networkClient.isConnected) {
             networkClient.sendInput({
                 shoot: true,
                 weaponType: gameState.currentWeapon
             });
-            // Still trigger visual feedback (muzzle flash) for immediate response
-            // But don't actually create projectiles/hits - server handles that
-            shotFired = true; // For visual feedback only
-            shootCooldown = weapon.fireRate; // Prevent spam
-            
-            // For semi-auto, stop shooting after first shot
-            if (weapon.fireMode === 'semi-auto') {
-                isShooting = false;
-            }
-        } else {
-            // Single player mode - handle locally
-            if (weapon.fireMode === 'auto') {
-                shotFired = shoot();
-            } else if (weapon.fireMode === 'semi-auto') {
-                // For semi-auto, shoot once and then stop shooting until mouse is released and pressed again
-                shotFired = shoot();
-                // Don't allow shooting again until mouse is released
-                isShooting = false;
-            }
+            lastShootSentState = true;
         }
+    }
+
+    if ((!isShooting || isReloading) && networkClient.isConnected && lastShootSentState) {
+        networkClient.sendInput({
+            shoot: false,
+            weaponType: gameState.currentWeapon
+        });
+        lastShootSentState = false;
     }
     
     // Return whether a shot was fired (for viewmodel animation)

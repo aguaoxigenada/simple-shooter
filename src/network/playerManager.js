@@ -2,6 +2,7 @@
 import { ClientPlayerEntity } from '../entities/playerEntity.js';
 import { networkClient } from './client.js';
 import { PlayerRenderer } from '../entities/playerRenderer.js';
+import { gameState } from '../core/gameState.js';
 
 export class PlayerManager {
     constructor() {
@@ -69,6 +70,15 @@ export class PlayerManager {
         }
         
         player.updateFromServer(serverState, Date.now());
+
+        if (player.isLocalPlayer) {
+            if (typeof serverState.health === 'number') {
+                gameState.health = serverState.health;
+            }
+            if (typeof serverState.stamina === 'number') {
+                gameState.stamina = Math.max(0, Math.min(serverState.stamina, 100));
+            }
+        }
     }
 
     updateAll(deltaTime) {

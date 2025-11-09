@@ -277,11 +277,19 @@ export function updatePlayer(deltaTime) {
             localPlayer.predictedPosition.copy(predictedPosition);
             
             // Update camera to predicted position for smooth local movement
-            // Ensure Y is at player height (eye level) - BUT preserve vertical movement from server
-            // Use server Y position if available, otherwise use ground level
-            const cameraY = localPlayer.serverPosition && localPlayer.serverPosition.lengthSq() > 0
-                ? Math.max(PLAYER.PLAYER_HEIGHT, localPlayer.serverPosition.y) // Keep server Y if higher than ground
-                : PLAYER.PLAYER_HEIGHT; // Default to ground level
+            let cameraY;
+            if (localPlayer.serverPosition && localPlayer.serverPosition.lengthSq() > 0) {
+                cameraY = localPlayer.serverPosition.y;
+            } else if (predictedPosition.lengthSq() > 0) {
+                cameraY = predictedPosition.y;
+            } else {
+                cameraY = PLAYER.PLAYER_HEIGHT;
+            }
+
+            const desiredEyeHeight = isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
+            cameraY = Math.max(desiredEyeHeight, cameraY);
+
+            predictedPosition.y = cameraY;
             
             camera.position.set(
                 predictedPosition.x,
