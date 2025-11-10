@@ -19,7 +19,8 @@ export const PLAYER = {
     STAMINA_RECOVERY_RATE: 20,
     MOUSE_SENSITIVITY: 0.002,
     MAX_HEALTH: 100,
-    MAX_STAMINA: 100
+    MAX_STAMINA: 100,
+    LADDER_CLIMB_SPEED: 3
 };
 
 // Weapon constants

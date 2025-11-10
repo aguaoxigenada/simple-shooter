@@ -44,6 +44,8 @@ export class PlayerEntity {
         this.isCrouched = false;
         this.isGrounded = true;
         this.canJump = true;
+        this.isOnLadder = false;
+        this.currentLadder = null;
         
         // Input state
         this.input = {
@@ -147,6 +149,7 @@ export class PlayerEntity {
         
         // Update crouch state
         this.isCrouched = this.input.crouch;
+        const effectiveHeight = this.isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
         
         // Calculate movement direction in local space
         // Match client EXACTLY: direction.z -= 1 for forward, direction.x -= 1 for left
@@ -212,16 +215,6 @@ export class PlayerEntity {
         this.velocity.x = dirX * speed;
         this.velocity.z = dirZ * speed;
         
-        // Jumping
-        if (this.input.jump && this.canJump && !this.isCrouched && this.isGrounded) {
-            this.velocity.y = PLAYER.JUMP_VELOCITY;
-            this.canJump = false;
-            this.isGrounded = false;
-        }
-        
-        // Apply gravity
-        this.velocity.y += PLAYER.GRAVITY * deltaTime;
-        
         // Store old position for collision resolution
         const oldX = this.position.x;
         const oldZ = this.position.z;
@@ -232,7 +225,7 @@ export class PlayerEntity {
         
         // Check collision with geometry and other players
         if (this.collisionManager) {
-            const currentHeight = this.isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
+            const currentHeight = effectiveHeight;
             
             // First check geometry collision
             let resolved = this.collisionManager.resolveCollision(
@@ -256,10 +249,46 @@ export class PlayerEntity {
             this.position.z = newZ;
         }
         
-        this.position.y += this.velocity.y * deltaTime;
+        if (this.collisionManager) {
+            this.currentLadder = this.collisionManager.findLadder(
+                this.position.x,
+                this.position.z,
+                this.position.y,
+                PLAYER.PLAYER_RADIUS,
+                effectiveHeight
+            );
+        } else {
+            this.currentLadder = null;
+        }
+        this.isOnLadder = !!this.currentLadder;
+
+        if (this.isOnLadder && this.input.jump && !this.isCrouched) {
+            this.velocity.y = PLAYER.JUMP_VELOCITY;
+            this.canJump = false;
+            this.isGrounded = false;
+            this.isOnLadder = false;
+            this.currentLadder = null;
+        }
+
+        if (!this.isOnLadder) {
+            this.velocity.y += PLAYER.GRAVITY * deltaTime;
+            this.position.y += this.velocity.y * deltaTime;
+        } else {
+            this.velocity.y = 0;
+            const ladder = this.currentLadder;
+            const climbDir = (this.input.forward ? 1 : 0) - (this.input.backward ? 1 : 0);
+            if (climbDir !== 0) {
+                this.position.y += climbDir * PLAYER.LADDER_CLIMB_SPEED * deltaTime;
+            }
+            const minClimbY = ladder.minY + effectiveHeight;
+            const maxClimbY = ladder.maxY;
+            this.position.y = Math.max(minClimbY, Math.min(maxClimbY, this.position.y));
+            this.canJump = true;
+            this.isGrounded = false;
+        }
         
         // Ground collision
-        const currentHeight = this.isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
+        const currentHeight = effectiveHeight;
         if (this.position.y < currentHeight) {
             this.position.y = currentHeight;
             this.velocity.y = 0;

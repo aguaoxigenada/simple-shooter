@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { camera } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
-import { collidableObjects } from '../world/environment.js';
+import { collidableObjects, ladderVolumes } from '../world/environment.js';
 import { PLAYER } from '../shared/constants.js';
 import { networkClient } from '../network/client.js';
 import { playerManager } from '../network/playerManager.js';
@@ -26,6 +26,8 @@ let direction = new THREE.Vector3();
 let canJump = false;
 let isCrouched = false;
 let currentPlayerHeight = playerHeight;
+let isOnLadder = false;
+let currentLadderVolume = null;
 
 // Mouse controls
 let pitch = 0;
@@ -180,6 +182,26 @@ function checkCollision(newX, newY, newZ) {
 let predictedPosition = new THREE.Vector3();
 let lastServerPosition = new THREE.Vector3();
 
+function findLadderVolumeAt(x, y, z, eyeHeight) {
+    const footY = y - eyeHeight;
+    const headY = y;
+    for (const ladder of ladderVolumes) {
+        const overlapsX = x + playerRadius > ladder.minX && x - playerRadius < ladder.maxX;
+        const overlapsZ = z + playerRadius > ladder.minZ && z - playerRadius < ladder.maxZ;
+        const overlapsY = headY > ladder.minY && footY < ladder.maxY;
+        if (overlapsX && overlapsY && overlapsZ) {
+            return ladder;
+        }
+    }
+    return null;
+}
+
+function clampYToLadder(y, ladder, eyeHeight) {
+    const minY = ladder.minY + eyeHeight;
+    const maxY = ladder.maxY;
+    return Math.min(maxY, Math.max(minY, y));
+}
+
 export function applyServerSpawnPosition(x, y, z, yawAngle = 0) {
     predictedPosition.set(x, y, z);
     lastServerPosition.set(x, y, z);
@@ -187,6 +209,8 @@ export function applyServerSpawnPosition(x, y, z, yawAngle = 0) {
     pitch = 0;
     camera.position.set(x, y, z);
     console.log(`[Client Spawn] Camera/prediction -> (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}) yaw:${yaw.toFixed(2)}`);
+    currentLadderVolume = null;
+    isOnLadder = false;
     const localPlayer = playerManager.getLocalPlayer();
     if (localPlayer) {
         localPlayer.predictedPosition.set(x, y, z);
@@ -212,6 +236,8 @@ export function resetSpawnTracking() {
     appliedInitialSpawn = false;
     predictedPosition.set(0, 0, 0);
     lastServerPosition.set(0, 0, 0);
+    currentLadderVolume = null;
+    isOnLadder = false;
 }
 
 export function updatePlayer(deltaTime) {
@@ -304,8 +330,6 @@ export function updatePlayer(deltaTime) {
                 canJump = false;
             }
 
-            velocity.y += gravity * deltaTime;
-
             // Apply collisions similar to offline mode
             const newX = predictedPosition.x + velocity.x * deltaTime;
             const testY = predictedPosition.y;
@@ -322,7 +346,34 @@ export function updatePlayer(deltaTime) {
                 predictedPosition.z = newZ;
             }
 
-            predictedPosition.y += velocity.y * deltaTime;
+            const ladderVolume = findLadderVolumeAt(
+                predictedPosition.x,
+                predictedPosition.y,
+                predictedPosition.z,
+                currentPlayerHeight
+            );
+            currentLadderVolume = ladderVolume;
+            isOnLadder = !!ladderVolume;
+
+            if (isOnLadder && keys.space && !isCrouched) {
+                velocity.y = jumpVelocity;
+                canJump = false;
+                isOnLadder = false;
+                currentLadderVolume = null;
+            }
+
+            if (isOnLadder && currentLadderVolume) {
+                velocity.y = 0;
+                const climbDir = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+                if (climbDir !== 0) {
+                    predictedPosition.y += climbDir * PLAYER.LADDER_CLIMB_SPEED * deltaTime;
+                }
+                predictedPosition.y = clampYToLadder(predictedPosition.y, currentLadderVolume, currentPlayerHeight);
+                canJump = true;
+            } else {
+                velocity.y += gravity * deltaTime;
+                predictedPosition.y += velocity.y * deltaTime;
+            }
             const targetEyeHeight = isCrouched ? crouchHeight : playerHeight;
             const blendedEyeHeight = updateCurrentEyeHeight(targetEyeHeight, deltaTime);
             if (predictedPosition.y < blendedEyeHeight) {
@@ -456,9 +507,6 @@ export function updatePlayer(deltaTime) {
         canJump = false;
     }
     
-    // Apply gravity
-    velocity.y += gravity * deltaTime;
-    
     // Update position with collision detection
     // Check X axis collision separately for sliding along walls
     const newX = camera.position.x + velocity.x * deltaTime;
@@ -477,8 +525,34 @@ export function updatePlayer(deltaTime) {
         camera.position.z = newZ;
     }
     
-    // Update Y (vertical movement, no collision check needed for jumping)
-    camera.position.y += velocity.y * deltaTime;
+    const ladderVolume = findLadderVolumeAt(
+        camera.position.x,
+        camera.position.y,
+        camera.position.z,
+        currentPlayerHeight
+    );
+    currentLadderVolume = ladderVolume;
+    isOnLadder = !!ladderVolume;
+
+    if (isOnLadder && keys.space && !isCrouched) {
+        velocity.y = jumpVelocity;
+        canJump = false;
+        isOnLadder = false;
+        currentLadderVolume = null;
+    }
+
+    if (isOnLadder && currentLadderVolume) {
+        velocity.y = 0;
+        const climbDir = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+        if (climbDir !== 0) {
+            camera.position.y += climbDir * PLAYER.LADDER_CLIMB_SPEED * deltaTime;
+        }
+        camera.position.y = clampYToLadder(camera.position.y, currentLadderVolume, currentPlayerHeight);
+        canJump = true;
+    } else {
+        velocity.y += gravity * deltaTime;
+        camera.position.y += velocity.y * deltaTime;
+    }
     
     // Ground collision - use current player height
     if (camera.position.y < blendedHeight) {
