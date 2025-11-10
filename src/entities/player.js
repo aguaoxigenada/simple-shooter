@@ -18,6 +18,8 @@ const playerHeight = PLAYER.PLAYER_HEIGHT;
 const crouchHeight = PLAYER.CROUCH_HEIGHT;
 const playerRadius = PLAYER.PLAYER_RADIUS;
 const crouchSpeedMultiplier = PLAYER.CROUCH_SPEED_MULTIPLIER;
+const crouchDownBlendSpeed = 12; // damping factor for crouching down (higher = faster)
+const crouchUpBlendSpeed = 6; // damping factor for standing up (lower = smoother rise)
 
 let velocity = new THREE.Vector3();
 let direction = new THREE.Vector3();
@@ -196,6 +198,16 @@ export function applyServerSpawnPosition(x, y, z, yawAngle = 0) {
     appliedInitialSpawn = true;
 }
 
+function updateCurrentEyeHeight(targetHeight, deltaTime) {
+    const lambda = targetHeight > currentPlayerHeight ? crouchUpBlendSpeed : crouchDownBlendSpeed;
+    currentPlayerHeight = THREE.MathUtils.damp(currentPlayerHeight, targetHeight, lambda, deltaTime);
+    if (Math.abs(currentPlayerHeight - targetHeight) < 0.001) {
+        currentPlayerHeight = targetHeight;
+    }
+    currentPlayerHeight = THREE.MathUtils.clamp(currentPlayerHeight, crouchHeight, playerHeight);
+    return currentPlayerHeight;
+}
+
 export function resetSpawnTracking() {
     appliedInitialSpawn = false;
     predictedPosition.set(0, 0, 0);
@@ -311,13 +323,13 @@ export function updatePlayer(deltaTime) {
             }
 
             predictedPosition.y += velocity.y * deltaTime;
-            const desiredEyeHeight = isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
-            if (predictedPosition.y < desiredEyeHeight) {
-                predictedPosition.y = desiredEyeHeight;
+            const targetEyeHeight = isCrouched ? crouchHeight : playerHeight;
+            const blendedEyeHeight = updateCurrentEyeHeight(targetEyeHeight, deltaTime);
+            if (predictedPosition.y < blendedEyeHeight) {
+                predictedPosition.y = blendedEyeHeight;
                 velocity.y = 0;
                 canJump = true;
             }
-            currentPlayerHeight = desiredEyeHeight;
 
             // THEN apply smooth server correction (after movement input)
             // This prevents correction from fighting with movement input
@@ -338,14 +350,12 @@ export function updatePlayer(deltaTime) {
             localPlayer.predictedPosition.copy(predictedPosition);
             
             // Update camera to predicted position for smooth local movement
-            let cameraY = predictedPosition.y;
-            const desiredEyeHeightLocal = isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
-            cameraY = Math.max(desiredEyeHeightLocal, cameraY);
-            predictedPosition.y = cameraY;
+            const eyeY = Math.max(predictedPosition.y, currentPlayerHeight);
+            predictedPosition.y = eyeY;
 
             camera.position.set(
                 predictedPosition.x,
-                cameraY,
+                eyeY,
                 predictedPosition.z
             );
               if (!appliedInitialSpawn) {
@@ -381,18 +391,7 @@ export function updatePlayer(deltaTime) {
     
     // Update player height smoothly
     const targetHeight = isCrouched ? crouchHeight : playerHeight;
-    const heightChangeSpeed = 5; // Speed of height transition
-    const heightDifference = targetHeight - currentPlayerHeight;
-    if (Math.abs(heightDifference) > 0.01) {
-        currentPlayerHeight += heightDifference * heightChangeSpeed * deltaTime;
-        // Clamp to prevent overshooting
-        if ((isCrouched && currentPlayerHeight < crouchHeight) || 
-            (!isCrouched && currentPlayerHeight > playerHeight)) {
-            currentPlayerHeight = targetHeight;
-        }
-    } else {
-        currentPlayerHeight = targetHeight;
-    }
+    const blendedHeight = updateCurrentEyeHeight(targetHeight, deltaTime);
     
     // Movement
     direction.set(0, 0, 0);
@@ -482,8 +481,8 @@ export function updatePlayer(deltaTime) {
     camera.position.y += velocity.y * deltaTime;
     
     // Ground collision - use current player height
-    if (camera.position.y < currentPlayerHeight) {
-        camera.position.y = currentPlayerHeight;
+    if (camera.position.y < blendedHeight) {
+        camera.position.y = blendedHeight;
         velocity.y = 0;
         canJump = true;
     }
