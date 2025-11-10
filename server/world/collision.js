@@ -6,6 +6,7 @@ export class CollisionManager {
         // Define collision boxes (walls and obstacles)
         // These should match the client environment
         this.collidableObjects = [];
+        this.ladders = [];
         this.initCollisionGeometry();
     }
 
@@ -23,6 +24,27 @@ export class CollisionManager {
         this.addBox(-5, 1, -5, 2, 2, 2);
         this.addBox(8, 1, -7, 1.5, 2, 1.5);
         this.addBox(-8, 1, 7, 1.5, 2, 1.5);
+
+        this.addStaircase({
+            x: -2,
+            z: 0,
+            stepCount: 5,
+            stepWidth: 3,
+            stepHeight: 0.4,
+            stepDepth: 0.7,
+            direction: 'north',
+            platformDepth: 2
+        });
+
+        this.addLadder({
+            x: 5,
+            z: 4.2,
+            width: 0.45,
+            depth: 0.3,
+            height: 2.4,
+            bottomY: 0,
+            climbMargin: 0.35
+        });
     }
 
     addBox(x, y, z, width, height, depth) {
@@ -37,6 +59,66 @@ export class CollisionManager {
         this.collidableObjects.push({
             minX, maxX, minY, maxY, minZ, maxZ
         });
+    }
+
+    addLadder({ x, z, width, depth, height, bottomY, climbMargin }) {
+        const margin = climbMargin ?? 0.35;
+        const ladder = {
+            minX: x - width / 2 - margin,
+            maxX: x + width / 2 + margin,
+            minZ: z - depth / 2 - margin,
+            maxZ: z + depth / 2 + margin,
+            minY: bottomY,
+            maxY: bottomY + height,
+            centerX: x,
+            centerZ: z
+        };
+        this.ladders.push(ladder);
+    }
+
+    findLadder(x, z, y, radius, height) {
+        const footY = y - height;
+        const headY = y;
+        for (const ladder of this.ladders) {
+            const overlapsX = x + radius > ladder.minX && x - radius < ladder.maxX;
+            const overlapsZ = z + radius > ladder.minZ && z - radius < ladder.maxZ;
+            const overlapsY = headY > ladder.minY && footY < ladder.maxY;
+            if (overlapsX && overlapsY && overlapsZ) {
+                return ladder;
+            }
+        }
+        return null;
+    }
+
+    addStaircase({
+        x,
+        z,
+        stepCount,
+        stepWidth,
+        stepHeight,
+        stepDepth,
+        direction,
+        platformDepth
+    }) {
+        const dir = direction.toLowerCase();
+        const dirX = dir === 'east' ? 1 : dir === 'west' ? -1 : 0;
+        const dirZ = dir === 'south' ? -1 : dir === 'north' ? 1 : 0;
+
+        for (let i = 0; i < stepCount; i++) {
+            const centerX = x + dirX * (i + 0.5) * stepDepth;
+            const centerZ = z + dirZ * (i + 0.5) * stepDepth;
+            const centerY = (i + 1) * stepHeight - stepHeight / 2;
+            const width = dirZ !== 0 ? stepWidth : stepDepth;
+            const depth = dirZ !== 0 ? stepDepth : stepWidth;
+            this.addBox(centerX, centerY, centerZ, width, stepHeight, depth);
+        }
+
+        const platformCenterX = x + dirX * (stepCount * stepDepth + platformDepth) / 2;
+        const platformCenterZ = z + dirZ * (stepCount * stepDepth + platformDepth) / 2;
+        const platformY = stepCount * stepHeight + stepHeight / 2;
+        const platformWidth = dirZ !== 0 ? stepWidth : platformDepth;
+        const platformDepthSize = dirZ !== 0 ? platformDepth : stepWidth;
+        this.addBox(platformCenterX, platformY, platformCenterZ, platformWidth, stepHeight, platformDepthSize);
     }
 
     checkCollision(x, y, z, radius, height) {

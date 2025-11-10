@@ -1,5 +1,4 @@
 import { SCENES, switchScene } from '../core/sceneManager.js';
-import { createButton } from '../ui/button.js';
 
 let uiContainer = null;
 let buttons = [];
@@ -32,47 +31,83 @@ export function init() {
     title.style.textShadow = '4px 4px 8px rgba(0, 0, 0, 0.8)';
     uiContainer.appendChild(title);
     
-    // Play button (use flex positioning instead of absolute)
-    const playButton = document.createElement('div');
-    playButton.textContent = 'PLAY';
-    playButton.style.width = '300px';
-    playButton.style.height = '60px';
-    playButton.style.backgroundColor = 'rgba(50, 50, 50, 0.8)';
-    playButton.style.border = '2px solid rgba(255, 255, 255, 0.5)';
-    playButton.style.borderRadius = '8px';
-    playButton.style.color = 'white';
-    playButton.style.fontSize = '24px';
-    playButton.style.fontWeight = 'bold';
-    playButton.style.fontFamily = 'monospace';
-    playButton.style.cursor = 'pointer';
-    playButton.style.display = 'flex';
-    playButton.style.alignItems = 'center';
-    playButton.style.justifyContent = 'center';
-    playButton.style.textAlign = 'center';
-    playButton.style.transition = 'all 0.2s ease';
-    playButton.style.userSelect = 'none';
-    
-    // Hover effects
-    playButton.addEventListener('mouseenter', () => {
-        playButton.style.backgroundColor = 'rgba(80, 80, 80, 0.9)';
-        playButton.style.borderColor = 'rgba(255, 255, 255, 0.8)';
-        playButton.style.transform = 'scale(1.05)';
-    });
-    
-    playButton.addEventListener('mouseleave', () => {
-        playButton.style.backgroundColor = 'rgba(50, 50, 50, 0.8)';
-        playButton.style.borderColor = 'rgba(255, 255, 255, 0.5)';
-        playButton.style.transform = 'scale(1)';
-    });
-    
-    // Click handler
-    playButton.addEventListener('click', () => {
-        console.log('Play button clicked, switching to game scene');
-        switchScene(SCENES.GAME);
-    });
-    
-    uiContainer.appendChild(playButton);
-    buttons.push(playButton);
+    const buttonStack = document.createElement('div');
+    buttonStack.style.display = 'flex';
+    buttonStack.style.flexDirection = 'column';
+    buttonStack.style.alignItems = 'center';
+    buttonStack.style.gap = '24px';
+    uiContainer.appendChild(buttonStack);
+
+    function createMenuButton(label, subtitle, onClick) {
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.flexDirection = 'column';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.gap = '8px';
+
+        const button = document.createElement('div');
+        button.textContent = label;
+        button.style.width = '320px';
+        button.style.height = '60px';
+        button.style.backgroundColor = 'rgba(50, 50, 50, 0.85)';
+        button.style.border = '2px solid rgba(255, 255, 255, 0.5)';
+        button.style.borderRadius = '10px';
+        button.style.color = 'white';
+        button.style.fontSize = '24px';
+        button.style.fontWeight = 'bold';
+        button.style.fontFamily = 'monospace';
+        button.style.cursor = 'pointer';
+        button.style.display = 'flex';
+        button.style.alignItems = 'center';
+        button.style.justifyContent = 'center';
+        button.style.textAlign = 'center';
+        button.style.transition = 'all 0.2s ease';
+        button.style.userSelect = 'none';
+
+        button.addEventListener('mouseenter', () => {
+            button.style.backgroundColor = 'rgba(80, 80, 80, 0.95)';
+            button.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+            button.style.transform = 'scale(1.05)';
+        });
+
+        button.addEventListener('mouseleave', () => {
+            button.style.backgroundColor = 'rgba(50, 50, 50, 0.85)';
+            button.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+            button.style.transform = 'scale(1)';
+        });
+
+        button.addEventListener('click', onClick);
+
+        const description = document.createElement('div');
+        description.textContent = subtitle;
+        description.style.color = 'rgba(255, 255, 255, 0.8)';
+        description.style.fontSize = '16px';
+        description.style.fontFamily = 'monospace';
+
+        wrapper.appendChild(button);
+        wrapper.appendChild(description);
+        buttonStack.appendChild(wrapper);
+        buttons.push(button);
+        return button;
+    }
+
+    createMenuButton(
+        'ARENA (MULTIPLAYER)',
+        'Join the lobby and battle other players online.',
+        () => {
+            console.log('Arena button clicked, switching to lobby scene');
+            switchScene(SCENES.LOBBY);
+        }
+    );
+
+    createMenuButton(
+        'TEST RANGE',
+        'Jump straight into the sandbox environment.',
+        () => {
+            console.log('Test range button clicked, switching to playground scene');
+            switchScene(SCENES.PLAYGROUND);
+        }
+    );
 }
 
 export function update(deltaTime) {

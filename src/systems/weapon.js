@@ -194,6 +194,10 @@ export function shoot() {
         return false;
     }
     
+    if (gameState.isInBuyPhase) {
+        return false;
+    }
+    
     if (weapon.ammo <= 0) {
         // Try to auto-reload if possible
         if (weapon.ammoTotal > 0 && !isReloading) {
@@ -220,6 +224,10 @@ export function shoot() {
 export function updateWeapon(deltaTime) {
     const weapon = getCurrentWeapon();
     if (!weapon) {
+        return false;
+    }
+    
+    if (gameState.isInBuyPhase) {
         return false;
     }
     
@@ -273,4 +281,10 @@ export function updateWeapon(deltaTime) {
     
     // Return whether a shot was fired (for viewmodel animation)
     return shotFired;
+}
+
+export function forceEquipWeapon(weaponType) {
+    if (!weaponType) return false;
+    switchWeapon(weaponType);
+    return true;
 }

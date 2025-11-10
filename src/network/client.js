@@ -29,6 +29,7 @@ class NetworkClient {
         this.onTargetState = null;
         this.onMatchResult = null;
         this.onPlayerHit = null;
+        this.onPlayerReadyUpdate = null;
     }
 
     connect(playerName = 'Player', autoReconnect = true) {
@@ -211,6 +212,16 @@ class NetworkClient {
                 console.error('Error handling player hit:', error);
             }
         });
+
+        this.socket.on(MESSAGE_TYPES.PLAYER_READY, (data) => {
+            try {
+                if (this.onPlayerReadyUpdate) {
+                    this.onPlayerReadyUpdate(data);
+                }
+            } catch (error) {
+                console.error('Error handling player ready update:', error);
+            }
+        });
     }
 
     _scheduleReconnect() {
@@ -307,6 +318,22 @@ class NetworkClient {
             if (this.onError) {
                 this.onError('Failed to report target destruction', error);
             }
+        }
+    }
+
+    sendReadyState(isReady) {
+        if (!this.isConnected || !this.socket || !this.playerId) {
+            return;
+        }
+
+        try {
+            this.socket.emit(MESSAGE_TYPES.PLAYER_READY, {
+                playerId: this.playerId,
+                isReady: !!isReady,
+                timestamp: Date.now()
+            });
+        } catch (error) {
+            console.error('Error sending ready state:', error);
         }
     }
 }

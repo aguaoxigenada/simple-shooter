@@ -19,7 +19,8 @@ export const PLAYER = {
     STAMINA_RECOVERY_RATE: 20, // per second
     MOUSE_SENSITIVITY: 0.002,
     MAX_HEALTH: 100,
-    MAX_STAMINA: 100
+    MAX_STAMINA: 100,
+    LADDER_CLIMB_SPEED: 3
 };
 
 // Weapon constants
@@ -85,5 +86,6 @@ export const MESSAGE_TYPES = {
     PLAYER_DIED: 'player_died',
     TARGET_STATE: 'target_state',
     PLAYER_HIT: 'player_hit',
-    MATCH_RESULT: 'match_result'
+    MATCH_RESULT: 'match_result',
+    PLAYER_READY: 'player_ready'
 };

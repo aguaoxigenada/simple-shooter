@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { camera } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
-import { collidableObjects } from '../world/environment.js';
+import { collidableObjects, ladderVolumes } from '../world/environment.js';
 import { PLAYER } from '../shared/constants.js';
 import { networkClient } from '../network/client.js';
 import { playerManager } from '../network/playerManager.js';
@@ -18,16 +18,21 @@ const playerHeight = PLAYER.PLAYER_HEIGHT;
 const crouchHeight = PLAYER.CROUCH_HEIGHT;
 const playerRadius = PLAYER.PLAYER_RADIUS;
 const crouchSpeedMultiplier = PLAYER.CROUCH_SPEED_MULTIPLIER;
+const crouchDownBlendSpeed = 12; // damping factor for crouching down (higher = faster)
+const crouchUpBlendSpeed = 6; // damping factor for standing up (lower = smoother rise)
 
 let velocity = new THREE.Vector3();
 let direction = new THREE.Vector3();
 let canJump = false;
 let isCrouched = false;
 let currentPlayerHeight = playerHeight;
+let isOnLadder = false;
+let currentLadderVolume = null;
 
 // Mouse controls
 let pitch = 0;
 let yaw = 0;
+let appliedInitialSpawn = false;
 
 export const keys = {
     w: false,
@@ -177,6 +182,64 @@ function checkCollision(newX, newY, newZ) {
 let predictedPosition = new THREE.Vector3();
 let lastServerPosition = new THREE.Vector3();
 
+function findLadderVolumeAt(x, y, z, eyeHeight) {
+    const footY = y - eyeHeight;
+    const headY = y;
+    for (const ladder of ladderVolumes) {
+        const overlapsX = x + playerRadius > ladder.minX && x - playerRadius < ladder.maxX;
+        const overlapsZ = z + playerRadius > ladder.minZ && z - playerRadius < ladder.maxZ;
+        const overlapsY = headY > ladder.minY && footY < ladder.maxY;
+        if (overlapsX && overlapsY && overlapsZ) {
+            return ladder;
+        }
+    }
+    return null;
+}
+
+function clampYToLadder(y, ladder, eyeHeight) {
+    const minY = ladder.minY + eyeHeight;
+    const maxY = ladder.maxY;
+    return Math.min(maxY, Math.max(minY, y));
+}
+
+export function applyServerSpawnPosition(x, y, z, yawAngle = 0) {
+    predictedPosition.set(x, y, z);
+    lastServerPosition.set(x, y, z);
+    yaw = yawAngle;
+    pitch = 0;
+    camera.position.set(x, y, z);
+    console.log(`[Client Spawn] Camera/prediction -> (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}) yaw:${yaw.toFixed(2)}`);
+    currentLadderVolume = null;
+    isOnLadder = false;
+    const localPlayer = playerManager.getLocalPlayer();
+    if (localPlayer) {
+        localPlayer.predictedPosition.set(x, y, z);
+        localPlayer.serverPosition.set(x, y, z);
+        localPlayer.position.set(x, y, z);
+        localPlayer.targetPosition.set(x, y, z);
+    }
+    gameState.applySpawn({ x, y, z }, yawAngle);
+    appliedInitialSpawn = true;
+}
+
+function updateCurrentEyeHeight(targetHeight, deltaTime) {
+    const lambda = targetHeight > currentPlayerHeight ? crouchUpBlendSpeed : crouchDownBlendSpeed;
+    currentPlayerHeight = THREE.MathUtils.damp(currentPlayerHeight, targetHeight, lambda, deltaTime);
+    if (Math.abs(currentPlayerHeight - targetHeight) < 0.001) {
+        currentPlayerHeight = targetHeight;
+    }
+    currentPlayerHeight = THREE.MathUtils.clamp(currentPlayerHeight, crouchHeight, playerHeight);
+    return currentPlayerHeight;
+}
+
+export function resetSpawnTracking() {
+    appliedInitialSpawn = false;
+    predictedPosition.set(0, 0, 0);
+    lastServerPosition.set(0, 0, 0);
+    currentLadderVolume = null;
+    isOnLadder = false;
+}
+
 export function updatePlayer(deltaTime) {
     // Collect input for networking
     const inputData = {
@@ -198,6 +261,18 @@ export function updatePlayer(deltaTime) {
     
     // Calculate movement direction locally for immediate feedback
     direction.set(0, 0, 0);
+    
+    if (!appliedInitialSpawn) {
+        const spawnPos = gameState.spawnInfo?.lastSpawnPosition;
+        if (spawnPos && (spawnPos.x || spawnPos.y || spawnPos.z)) {
+            predictedPosition.set(spawnPos.x, spawnPos.y, spawnPos.z);
+            lastServerPosition.set(spawnPos.x, spawnPos.y, spawnPos.z);
+            camera.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
+            yaw = gameState.spawnInfo.lastSpawnYaw || 0;
+            pitch = 0;
+            appliedInitialSpawn = true;
+        }
+    }
     
     if (keys.w) direction.z -= 1;
     if (keys.s) direction.z += 1;
@@ -230,34 +305,83 @@ export function updatePlayer(deltaTime) {
         const localPlayer = playerManager.getLocalPlayer();
         if (localPlayer) {
             // Initialize predicted position from server position ONLY on first frame
-            if (predictedPosition.lengthSq() === 0) {
-                // First frame - initialize from server position if available
-                if (localPlayer.serverPosition && localPlayer.serverPosition.lengthSq() > 0) {
-                    predictedPosition.copy(localPlayer.serverPosition);
-                } else if (localPlayer.predictedPosition.lengthSq() > 0) {
-                    predictedPosition.copy(localPlayer.predictedPosition);
-                } else if (camera.position.lengthSq() > 0) {
-                    // Fallback to current camera position if server position not ready yet
-                    predictedPosition.set(camera.position.x, PLAYER.PLAYER_HEIGHT, camera.position.z);
-                }
-            }
-            
             // Apply movement to predicted position FIRST
-            if (direction.lengthSq() > 0) {
-                const wantsToSprint = keys.shift && !isCrouched;
-                const hasEnoughStamina = gameState.stamina >= 1;
-                const isSprinting = wantsToSprint && hasEnoughStamina;
-                
-                let currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
-                if (isCrouched) {
-                    currentSpeed *= crouchSpeedMultiplier;
-                }
-                
-                // Move predicted position
-                predictedPosition.x += direction.x * currentSpeed * deltaTime;
-                predictedPosition.z += direction.z * currentSpeed * deltaTime;
+            let currentSpeed = moveSpeed;
+            const wantsToSprint = keys.shift && !isCrouched;
+            const hasEnoughStamina = gameState.stamina >= 1;
+            const isSprinting = wantsToSprint && hasEnoughStamina;
+            if (isSprinting) {
+                currentSpeed = sprintSpeed;
             }
-            
+            if (isCrouched) {
+                currentSpeed *= crouchSpeedMultiplier;
+            }
+
+            if (direction.lengthSq() > 0) {
+                velocity.x = direction.x * currentSpeed;
+                velocity.z = direction.z * currentSpeed;
+            } else {
+                velocity.x = 0;
+                velocity.z = 0;
+            }
+
+            if (keys.space && canJump && !isCrouched) {
+                velocity.y = jumpVelocity;
+                canJump = false;
+            }
+
+            // Apply collisions similar to offline mode
+            const newX = predictedPosition.x + velocity.x * deltaTime;
+            const testY = predictedPosition.y;
+            const testZ = predictedPosition.z;
+
+            if (!checkCollision(newX, testY, testZ)) {
+                predictedPosition.x = newX;
+            }
+
+            const newZ = predictedPosition.z + velocity.z * deltaTime;
+            const testX = predictedPosition.x;
+
+            if (!checkCollision(testX, testY, newZ)) {
+                predictedPosition.z = newZ;
+            }
+
+            const ladderVolume = findLadderVolumeAt(
+                predictedPosition.x,
+                predictedPosition.y,
+                predictedPosition.z,
+                currentPlayerHeight
+            );
+            currentLadderVolume = ladderVolume;
+            isOnLadder = !!ladderVolume;
+
+            if (isOnLadder && keys.space && !isCrouched) {
+                velocity.y = jumpVelocity;
+                canJump = false;
+                isOnLadder = false;
+                currentLadderVolume = null;
+            }
+
+            if (isOnLadder && currentLadderVolume) {
+                velocity.y = 0;
+                const climbDir = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+                if (climbDir !== 0) {
+                    predictedPosition.y += climbDir * PLAYER.LADDER_CLIMB_SPEED * deltaTime;
+                }
+                predictedPosition.y = clampYToLadder(predictedPosition.y, currentLadderVolume, currentPlayerHeight);
+                canJump = true;
+            } else {
+                velocity.y += gravity * deltaTime;
+                predictedPosition.y += velocity.y * deltaTime;
+            }
+            const targetEyeHeight = isCrouched ? crouchHeight : playerHeight;
+            const blendedEyeHeight = updateCurrentEyeHeight(targetEyeHeight, deltaTime);
+            if (predictedPosition.y < blendedEyeHeight) {
+                predictedPosition.y = blendedEyeHeight;
+                velocity.y = 0;
+                canJump = true;
+            }
+
             // THEN apply smooth server correction (after movement input)
             // This prevents correction from fighting with movement input
             if (localPlayer.serverPosition && localPlayer.serverPosition.lengthSq() > 0) {
@@ -277,25 +401,26 @@ export function updatePlayer(deltaTime) {
             localPlayer.predictedPosition.copy(predictedPosition);
             
             // Update camera to predicted position for smooth local movement
-            let cameraY;
-            if (localPlayer.serverPosition && localPlayer.serverPosition.lengthSq() > 0) {
-                cameraY = localPlayer.serverPosition.y;
-            } else if (predictedPosition.lengthSq() > 0) {
-                cameraY = predictedPosition.y;
-            } else {
-                cameraY = PLAYER.PLAYER_HEIGHT;
-            }
+            const eyeY = Math.max(predictedPosition.y, currentPlayerHeight);
+            predictedPosition.y = eyeY;
 
-            const desiredEyeHeight = isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
-            cameraY = Math.max(desiredEyeHeight, cameraY);
-
-            predictedPosition.y = cameraY;
-            
             camera.position.set(
                 predictedPosition.x,
-                cameraY,
+                eyeY,
                 predictedPosition.z
             );
+              if (!appliedInitialSpawn) {
+                  const spawnPos = gameState.spawnInfo?.lastSpawnPosition;
+                  if (spawnPos && (spawnPos.x || spawnPos.y || spawnPos.z)) {
+                      predictedPosition.set(spawnPos.x, spawnPos.y, spawnPos.z);
+                      lastServerPosition.set(spawnPos.x, spawnPos.y, spawnPos.z);
+                      camera.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
+                      yaw = gameState.spawnInfo.lastSpawnYaw || 0;
+                      pitch = 0;
+                      appliedInitialSpawn = true;
+                      console.log('[Client Spawn] Delayed spawn applied');
+                  }
+              }
         }
         
         // Update camera rotation
@@ -317,18 +442,7 @@ export function updatePlayer(deltaTime) {
     
     // Update player height smoothly
     const targetHeight = isCrouched ? crouchHeight : playerHeight;
-    const heightChangeSpeed = 5; // Speed of height transition
-    const heightDifference = targetHeight - currentPlayerHeight;
-    if (Math.abs(heightDifference) > 0.01) {
-        currentPlayerHeight += heightDifference * heightChangeSpeed * deltaTime;
-        // Clamp to prevent overshooting
-        if ((isCrouched && currentPlayerHeight < crouchHeight) || 
-            (!isCrouched && currentPlayerHeight > playerHeight)) {
-            currentPlayerHeight = targetHeight;
-        }
-    } else {
-        currentPlayerHeight = targetHeight;
-    }
+    const blendedHeight = updateCurrentEyeHeight(targetHeight, deltaTime);
     
     // Movement
     direction.set(0, 0, 0);
@@ -393,9 +507,6 @@ export function updatePlayer(deltaTime) {
         canJump = false;
     }
     
-    // Apply gravity
-    velocity.y += gravity * deltaTime;
-    
     // Update position with collision detection
     // Check X axis collision separately for sliding along walls
     const newX = camera.position.x + velocity.x * deltaTime;
@@ -414,12 +525,38 @@ export function updatePlayer(deltaTime) {
         camera.position.z = newZ;
     }
     
-    // Update Y (vertical movement, no collision check needed for jumping)
-    camera.position.y += velocity.y * deltaTime;
+    const ladderVolume = findLadderVolumeAt(
+        camera.position.x,
+        camera.position.y,
+        camera.position.z,
+        currentPlayerHeight
+    );
+    currentLadderVolume = ladderVolume;
+    isOnLadder = !!ladderVolume;
+
+    if (isOnLadder && keys.space && !isCrouched) {
+        velocity.y = jumpVelocity;
+        canJump = false;
+        isOnLadder = false;
+        currentLadderVolume = null;
+    }
+
+    if (isOnLadder && currentLadderVolume) {
+        velocity.y = 0;
+        const climbDir = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+        if (climbDir !== 0) {
+            camera.position.y += climbDir * PLAYER.LADDER_CLIMB_SPEED * deltaTime;
+        }
+        camera.position.y = clampYToLadder(camera.position.y, currentLadderVolume, currentPlayerHeight);
+        canJump = true;
+    } else {
+        velocity.y += gravity * deltaTime;
+        camera.position.y += velocity.y * deltaTime;
+    }
     
     // Ground collision - use current player height
-    if (camera.position.y < currentPlayerHeight) {
-        camera.position.y = currentPlayerHeight;
+    if (camera.position.y < blendedHeight) {
+        camera.position.y = blendedHeight;
         velocity.y = 0;
         canJump = true;
     }
