@@ -5,6 +5,7 @@ import { collidableObjects, ladderVolumes } from '../world/environment.js';
 import { PLAYER } from '../shared/constants.js';
 import { networkClient } from '../network/client.js';
 import { playerManager } from '../network/playerManager.js';
+import { getCameraShakeOffset } from '../systems/weapon.js';
 
 // Use shared constants
 const moveSpeed = PLAYER.MOVE_SPEED;
@@ -423,19 +424,21 @@ export function updatePlayer(deltaTime) {
               }
         }
         
-        // Update camera rotation
+        // Update camera rotation with shake
+        const shake = getCameraShakeOffset();
         camera.rotation.order = 'YXZ';
-        camera.rotation.y = yaw;
-        camera.rotation.x = pitch;
+        camera.rotation.y = yaw + shake.x;
+        camera.rotation.x = pitch + shake.y;
         
         return; // Don't run local movement when connected
     }
     
     // Local movement (single player mode only)
-    // Update camera rotation
+    // Update camera rotation with shake
+    const shake = getCameraShakeOffset();
     camera.rotation.order = 'YXZ';
-    camera.rotation.y = yaw;
-    camera.rotation.x = pitch;
+    camera.rotation.y = yaw + shake.x;
+    camera.rotation.x = pitch + shake.y;
     
     // Update crouch state
     isCrouched = keys.ctrl;

@@ -23,6 +23,7 @@ export function createTarget(id, x, y, z) {
     const head = new THREE.Mesh(headGeometry, headMaterial);
     head.position.y = 1.5;
     head.castShadow = true;
+    head.userData.isHead = true; // Mark head for headshot detection
     group.add(head);
     
     // Body

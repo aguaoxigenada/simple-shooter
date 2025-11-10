@@ -32,7 +32,8 @@ export const WEAPON = {
         AMMO_TOTAL: 24,
         FIRE_MODE: 'semi-auto',
         PROJECTILE_TYPE: 'raycast',
-        RELOAD_TIME: 1.5
+        RELOAD_TIME: 1.5,
+        DISTANCE: 50 // Medium range
     },
     ASSAULT_RIFLE: {
         DAMAGE: 50,
@@ -41,7 +42,18 @@ export const WEAPON = {
         AMMO_TOTAL: 90,
         FIRE_MODE: 'auto',
         PROJECTILE_TYPE: 'raycast',
-        RELOAD_TIME: 2.0
+        RELOAD_TIME: 2.0,
+        DISTANCE: 100 // Long range
+    },
+    SHOTGUN: {
+        DAMAGE: 80, // High damage for close range
+        FIRE_RATE: 0.8,
+        AMMO_CAPACITY: 8,
+        AMMO_TOTAL: 32,
+        FIRE_MODE: 'semi-auto',
+        PROJECTILE_TYPE: 'raycast',
+        RELOAD_TIME: 2.0,
+        DISTANCE: 15 // Short range - close combat
     },
     ROCKET_LAUNCHER: {
         DAMAGE: 100, // Base damage, actual is area-based
@@ -51,6 +63,7 @@ export const WEAPON = {
         FIRE_MODE: 'semi-auto',
         PROJECTILE_TYPE: 'projectile',
         RELOAD_TIME: 2.5
+        // No DISTANCE - projectile-based weapon
     }
 };
 
