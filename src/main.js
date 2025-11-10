@@ -3,12 +3,16 @@ import { scene, camera, renderer } from './core/scene.js';
 import { SCENES, registerScene, switchScene, updateScene, renderScene } from './core/sceneManager.js';
 import * as mainMenuScene from './scenes/mainMenu.js';
 import * as gameScene from './scenes/game.js';
+import * as playgroundScene from './scenes/playground.js';
+import * as lobbyScene from './scenes/lobby.js';
 import * as gameOverScene from './scenes/gameOver.js';
 import * as victoryScene from './scenes/victory.js';
 
 // Register all scenes
 registerScene(SCENES.MAIN_MENU, mainMenuScene);
 registerScene(SCENES.GAME, gameScene);
+registerScene(SCENES.PLAYGROUND, playgroundScene);
+registerScene(SCENES.LOBBY, lobbyScene);
 registerScene(SCENES.GAME_OVER, gameOverScene);
 registerScene(SCENES.VICTORY, victoryScene);
 

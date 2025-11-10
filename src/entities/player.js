@@ -28,6 +28,7 @@ let currentPlayerHeight = playerHeight;
 // Mouse controls
 let pitch = 0;
 let yaw = 0;
+let appliedInitialSpawn = false;
 
 export const keys = {
     w: false,
@@ -177,6 +178,30 @@ function checkCollision(newX, newY, newZ) {
 let predictedPosition = new THREE.Vector3();
 let lastServerPosition = new THREE.Vector3();
 
+export function applyServerSpawnPosition(x, y, z, yawAngle = 0) {
+    predictedPosition.set(x, y, z);
+    lastServerPosition.set(x, y, z);
+    yaw = yawAngle;
+    pitch = 0;
+    camera.position.set(x, y, z);
+    console.log(`[Client Spawn] Camera/prediction -> (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}) yaw:${yaw.toFixed(2)}`);
+    const localPlayer = playerManager.getLocalPlayer();
+    if (localPlayer) {
+        localPlayer.predictedPosition.set(x, y, z);
+        localPlayer.serverPosition.set(x, y, z);
+        localPlayer.position.set(x, y, z);
+        localPlayer.targetPosition.set(x, y, z);
+    }
+    gameState.applySpawn({ x, y, z }, yawAngle);
+    appliedInitialSpawn = true;
+}
+
+export function resetSpawnTracking() {
+    appliedInitialSpawn = false;
+    predictedPosition.set(0, 0, 0);
+    lastServerPosition.set(0, 0, 0);
+}
+
 export function updatePlayer(deltaTime) {
     // Collect input for networking
     const inputData = {
@@ -198,6 +223,18 @@ export function updatePlayer(deltaTime) {
     
     // Calculate movement direction locally for immediate feedback
     direction.set(0, 0, 0);
+    
+    if (!appliedInitialSpawn) {
+        const spawnPos = gameState.spawnInfo?.lastSpawnPosition;
+        if (spawnPos && (spawnPos.x || spawnPos.y || spawnPos.z)) {
+            predictedPosition.set(spawnPos.x, spawnPos.y, spawnPos.z);
+            lastServerPosition.set(spawnPos.x, spawnPos.y, spawnPos.z);
+            camera.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
+            yaw = gameState.spawnInfo.lastSpawnYaw || 0;
+            pitch = 0;
+            appliedInitialSpawn = true;
+        }
+    }
     
     if (keys.w) direction.z -= 1;
     if (keys.s) direction.z += 1;
@@ -230,34 +267,58 @@ export function updatePlayer(deltaTime) {
         const localPlayer = playerManager.getLocalPlayer();
         if (localPlayer) {
             // Initialize predicted position from server position ONLY on first frame
-            if (predictedPosition.lengthSq() === 0) {
-                // First frame - initialize from server position if available
-                if (localPlayer.serverPosition && localPlayer.serverPosition.lengthSq() > 0) {
-                    predictedPosition.copy(localPlayer.serverPosition);
-                } else if (localPlayer.predictedPosition.lengthSq() > 0) {
-                    predictedPosition.copy(localPlayer.predictedPosition);
-                } else if (camera.position.lengthSq() > 0) {
-                    // Fallback to current camera position if server position not ready yet
-                    predictedPosition.set(camera.position.x, PLAYER.PLAYER_HEIGHT, camera.position.z);
-                }
-            }
-            
             // Apply movement to predicted position FIRST
-            if (direction.lengthSq() > 0) {
-                const wantsToSprint = keys.shift && !isCrouched;
-                const hasEnoughStamina = gameState.stamina >= 1;
-                const isSprinting = wantsToSprint && hasEnoughStamina;
-                
-                let currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
-                if (isCrouched) {
-                    currentSpeed *= crouchSpeedMultiplier;
-                }
-                
-                // Move predicted position
-                predictedPosition.x += direction.x * currentSpeed * deltaTime;
-                predictedPosition.z += direction.z * currentSpeed * deltaTime;
+            let currentSpeed = moveSpeed;
+            const wantsToSprint = keys.shift && !isCrouched;
+            const hasEnoughStamina = gameState.stamina >= 1;
+            const isSprinting = wantsToSprint && hasEnoughStamina;
+            if (isSprinting) {
+                currentSpeed = sprintSpeed;
             }
-            
+            if (isCrouched) {
+                currentSpeed *= crouchSpeedMultiplier;
+            }
+
+            if (direction.lengthSq() > 0) {
+                velocity.x = direction.x * currentSpeed;
+                velocity.z = direction.z * currentSpeed;
+            } else {
+                velocity.x = 0;
+                velocity.z = 0;
+            }
+
+            if (keys.space && canJump && !isCrouched) {
+                velocity.y = jumpVelocity;
+                canJump = false;
+            }
+
+            velocity.y += gravity * deltaTime;
+
+            // Apply collisions similar to offline mode
+            const newX = predictedPosition.x + velocity.x * deltaTime;
+            const testY = predictedPosition.y;
+            const testZ = predictedPosition.z;
+
+            if (!checkCollision(newX, testY, testZ)) {
+                predictedPosition.x = newX;
+            }
+
+            const newZ = predictedPosition.z + velocity.z * deltaTime;
+            const testX = predictedPosition.x;
+
+            if (!checkCollision(testX, testY, newZ)) {
+                predictedPosition.z = newZ;
+            }
+
+            predictedPosition.y += velocity.y * deltaTime;
+            const desiredEyeHeight = isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
+            if (predictedPosition.y < desiredEyeHeight) {
+                predictedPosition.y = desiredEyeHeight;
+                velocity.y = 0;
+                canJump = true;
+            }
+            currentPlayerHeight = desiredEyeHeight;
+
             // THEN apply smooth server correction (after movement input)
             // This prevents correction from fighting with movement input
             if (localPlayer.serverPosition && localPlayer.serverPosition.lengthSq() > 0) {
@@ -277,25 +338,28 @@ export function updatePlayer(deltaTime) {
             localPlayer.predictedPosition.copy(predictedPosition);
             
             // Update camera to predicted position for smooth local movement
-            let cameraY;
-            if (localPlayer.serverPosition && localPlayer.serverPosition.lengthSq() > 0) {
-                cameraY = localPlayer.serverPosition.y;
-            } else if (predictedPosition.lengthSq() > 0) {
-                cameraY = predictedPosition.y;
-            } else {
-                cameraY = PLAYER.PLAYER_HEIGHT;
-            }
-
-            const desiredEyeHeight = isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
-            cameraY = Math.max(desiredEyeHeight, cameraY);
-
+            let cameraY = predictedPosition.y;
+            const desiredEyeHeightLocal = isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
+            cameraY = Math.max(desiredEyeHeightLocal, cameraY);
             predictedPosition.y = cameraY;
-            
+
             camera.position.set(
                 predictedPosition.x,
                 cameraY,
                 predictedPosition.z
             );
+              if (!appliedInitialSpawn) {
+                  const spawnPos = gameState.spawnInfo?.lastSpawnPosition;
+                  if (spawnPos && (spawnPos.x || spawnPos.y || spawnPos.z)) {
+                      predictedPosition.set(spawnPos.x, spawnPos.y, spawnPos.z);
+                      lastServerPosition.set(spawnPos.x, spawnPos.y, spawnPos.z);
+                      camera.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
+                      yaw = gameState.spawnInfo.lastSpawnYaw || 0;
+                      pitch = 0;
+                      appliedInitialSpawn = true;
+                      console.log('[Client Spawn] Delayed spawn applied');
+                  }
+              }
         }
         
         // Update camera rotation

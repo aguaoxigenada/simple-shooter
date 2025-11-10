@@ -85,5 +85,6 @@ export const MESSAGE_TYPES = {
     PLAYER_DIED: 'player_died',
     TARGET_STATE: 'target_state',
     PLAYER_HIT: 'player_hit',
-    MATCH_RESULT: 'match_result'
+    MATCH_RESULT: 'match_result',
+    PLAYER_READY: 'player_ready'
 };

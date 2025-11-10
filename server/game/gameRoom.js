@@ -27,6 +27,12 @@ export class GameRoom {
         this.playerInputRates = new Map(); // socketId -> { count: number, resetTime: number }
         this.destroyedTargets = new Set();
         this.matchOver = false;
+        this.spawnPoints = [
+            { x: -7, y: PlayerEntity.spawnHeight(), z: -6 },
+            { x: 7, y: PlayerEntity.spawnHeight(), z: -6 },
+            { x: 2, y: PlayerEntity.spawnHeight(), z: 6 }
+        ];
+        this.spawnAssignments = new Map();
     }
 
     addPlayer(socket) {
@@ -35,6 +41,11 @@ export class GameRoom {
         
         // Create player entity with collision manager
         const playerEntity = new PlayerEntity(socket.id, this.collisionManager);
+        const spawnPoint = this.getNextSpawnPoint(socket.id);
+        console.log(`[Spawn] Assigning player ${socket.id} to spawn (${spawnPoint.x.toFixed(2)}, ${spawnPoint.y.toFixed(2)}, ${spawnPoint.z.toFixed(2)})`);
+        playerEntity.position.x = spawnPoint.x;
+        playerEntity.position.y = spawnPoint.y;
+        playerEntity.position.z = spawnPoint.z;
         this.players.set(socket.id, playerEntity);
         
         console.log(`Player ${socket.id} joined room ${this.roomId}. Total players: ${this.players.size}`);
@@ -43,6 +54,7 @@ export class GameRoom {
         socket.emit(MESSAGE_TYPES.PLAYER_SPAWNED, {
             playerId: socket.id,
             position: playerEntity.position,
+            rotation: { yaw: playerEntity.rotation.yaw, pitch: playerEntity.rotation.pitch },
             health: playerEntity.health
         });
         
@@ -68,6 +80,10 @@ export class GameRoom {
         socket.on(MESSAGE_TYPES.TARGET_DESTROYED, (data) => {
             this.handleTargetDestroyed(socket.id, data);
         });
+
+        socket.on(MESSAGE_TYPES.PLAYER_READY, (data) => {
+            this.handlePlayerReady(socket.id, data);
+        });
     }
 
     removePlayer(socketId) {
@@ -76,6 +92,7 @@ export class GameRoom {
             this.players.delete(socketId);
             // Clean up rate limiting
             this.playerInputRates.delete(socketId);
+            this.spawnAssignments.delete(socketId);
             console.log(`Player ${socketId} left room ${this.roomId}. Total players: ${this.players.size}`);
             
             // Notify other players
@@ -113,6 +130,53 @@ export class GameRoom {
         } catch (error) {
             console.error(`Error processing input for player ${socketId}:`, error);
         }
+    }
+
+    handlePlayerReady(socketId, data) {
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+        const { playerId, isReady } = data;
+        const targetId = playerId || socketId;
+        if (!this.players.has(targetId)) {
+            console.warn(`Ready update for unknown player: ${targetId}`);
+            return;
+        }
+
+        console.log(`[Lobby] Player ${targetId} ready state => ${isReady}`);
+        this.io.to(this.roomId).emit(MESSAGE_TYPES.PLAYER_READY, {
+            playerId: targetId,
+            isReady: !!isReady
+        });
+        // Also store ready state server-side if additional logic is needed
+        if (!this._readyStates) {
+            this._readyStates = new Map();
+        }
+        this._readyStates.set(targetId, !!isReady);
+    }
+
+    getNextSpawnPoint(playerId) {
+        if (this.spawnAssignments.has(playerId)) {
+            const index = this.spawnAssignments.get(playerId);
+            return this.spawnPoints[index];
+        }
+
+        const used = new Set(this.spawnAssignments.values());
+        const available = this.spawnPoints
+            .map((_, idx) => idx)
+            .filter((idx) => !used.has(idx));
+
+        let index;
+        if (available.length > 0) {
+            index = available[Math.floor(Math.random() * available.length)];
+        } else {
+            index = Math.floor(Math.random() * this.spawnPoints.length);
+        }
+
+        this.spawnAssignments.set(playerId, index);
+        const point = this.spawnPoints[index];
+        console.log(`[Spawn Queue] Player ${playerId} -> index ${index}, used=${Array.from(used).join(',')}`);
+        return point;
     }
     
     validateInput(inputData) {

@@ -75,6 +75,10 @@ export class PlayerEntity {
         this._debugLastRaycastLog = 0;
     }
 
+    static spawnHeight() {
+        return PLAYER.PLAYER_HEIGHT;
+    }
+
     updateInput(inputData) {
         // Update input from client - keys are explicitly set (true/false)
         if (inputData.keys) {

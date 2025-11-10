@@ -3,7 +3,9 @@ export const SCENES = {
     MAIN_MENU: 'mainMenu',
     GAME: 'game',
     GAME_OVER: 'gameOver',
-    VICTORY: 'victory'
+    VICTORY: 'victory',
+    PLAYGROUND: 'playground',
+    LOBBY: 'lobby'
 };
 
 let currentScene = null;

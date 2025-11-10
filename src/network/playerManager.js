@@ -11,6 +11,7 @@ export class PlayerManager {
         this.localPlayerId = null;
         this.onPlayerAdded = null;
         this.onPlayerRemoved = null;
+        this.onPlayersUpdated = null;
     }
 
     setLocalPlayerId(playerId) {
@@ -24,7 +25,19 @@ export class PlayerManager {
 
     addPlayer(playerId, isLocal = false) {
         if (this.players.has(playerId)) {
-            return this.players.get(playerId);
+            const existing = this.players.get(playerId);
+            if (isLocal && !existing.isLocalPlayer) {
+                existing.isLocalPlayer = true;
+                existing.usePrediction = true;
+                existing.predictedPosition.copy(existing.position);
+                existing.serverPosition.copy(existing.position);
+                const renderer = this.renderers.get(playerId);
+                if (renderer) {
+                    renderer.dispose();
+                    this.renderers.delete(playerId);
+                }
+            }
+            return existing;
         }
 
         const player = new ClientPlayerEntity(playerId, isLocal);
@@ -40,6 +53,9 @@ export class PlayerManager {
         
         if (this.onPlayerAdded) {
             this.onPlayerAdded(player);
+        }
+        if (this.onPlayersUpdated) {
+            this.onPlayersUpdated(this.getAllPlayers());
         }
         
         return player;
@@ -61,6 +77,9 @@ export class PlayerManager {
                 this.onPlayerRemoved(player);
             }
         }
+        if (this.onPlayersUpdated) {
+            this.onPlayersUpdated(this.getAllPlayers());
+        }
     }
 
     updatePlayerFromServer(playerId, serverState) {
@@ -78,6 +97,9 @@ export class PlayerManager {
             if (typeof serverState.stamina === 'number') {
                 gameState.stamina = Math.max(0, Math.min(serverState.stamina, 100));
             }
+        }
+        if (this.onPlayersUpdated) {
+            this.onPlayersUpdated(this.getAllPlayers());
         }
     }
 

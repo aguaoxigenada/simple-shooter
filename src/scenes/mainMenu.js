@@ -34,7 +34,7 @@ export function init() {
     
     // Play button (use flex positioning instead of absolute)
     const playButton = document.createElement('div');
-    playButton.textContent = 'PLAY';
+    playButton.textContent = 'ENTER LOBBY';
     playButton.style.width = '300px';
     playButton.style.height = '60px';
     playButton.style.backgroundColor = 'rgba(50, 50, 50, 0.8)';
@@ -67,8 +67,8 @@ export function init() {
     
     // Click handler
     playButton.addEventListener('click', () => {
-        console.log('Play button clicked, switching to game scene');
-        switchScene(SCENES.GAME);
+        console.log('Play button clicked, switching to lobby scene');
+        switchScene(SCENES.LOBBY);
     });
     
     uiContainer.appendChild(playButton);
