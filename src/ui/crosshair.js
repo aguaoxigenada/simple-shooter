@@ -43,9 +43,9 @@ const CROSSHAIR_CONFIGS = {
     },
     [WEAPON_TYPES.ASSAULT_RIFLE]: {
         style: 'classicCross', // Classic cross with center square
-        baseGap: 0.220, // Gap from center to where lines start (60% smaller)
-        baseLineLength: 0.329, // Base length of each cross line (60% smaller)
-        baseSquareSize: 0.110, // Size of center square (60% smaller)
+        baseGap: 0.15, // Gap from center to where lines start (smaller default)
+        baseLineLength: 0.22, // Base length of each cross line (smaller default)
+        baseSquareSize: 0.07, // Size of center square (smaller default)
         color: '#FFAA00',
         maxGapExpansion: 25.6, // Max gap expansion (kept same)
         maxLineExpansion: 22.4, // Max line length expansion (kept same)
