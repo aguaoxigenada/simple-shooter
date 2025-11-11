@@ -58,6 +58,10 @@ const ASSAULT_RIFLE_MAX_SPREAD = 6 * Math.PI / 180; // Max 6 degrees spread
 const ASSAULT_RIFLE_SPREAD_RECOVERY_RATE = 2.0; // Spread recovery per second
 const ASSAULT_RIFLE_SPREAD_INCREASE_RATE = 0.5; // Spread increase per shot after tight shots
 
+// Crosshair firing indicator
+let lastFireTime = 0; // Track when weapon last fired (for crosshair)
+const FIRE_INDICATOR_DURATION = 0.15; // How long to show firing expansion (seconds)
+
 export function initWeapon(renderer) {
     // Initialize current weapon
     gameState.currentWeapon = WEAPON_TYPES.ASSAULT_RIFLE;
@@ -330,6 +334,40 @@ export function getCameraShakeOffset() {
     return cameraShakeOffset;
 }
 
+// Export assault rifle spread for crosshair visualization
+export function getAssaultRifleSpread() {
+    if (gameState.currentWeapon !== WEAPON_TYPES.ASSAULT_RIFLE) {
+        return 0;
+    }
+    
+    // Calculate current spread (same logic as in shootRaycast)
+    if (assaultRifleConsecutiveShots < ASSAULT_RIFLE_TIGHT_SHOTS) {
+        return 1 * Math.PI / 180; // 1 degree
+    } else {
+        const extraShots = assaultRifleConsecutiveShots - ASSAULT_RIFLE_TIGHT_SHOTS;
+        return Math.min(
+            ASSAULT_RIFLE_MAX_SPREAD,
+            1 * Math.PI / 180 + (extraShots * ASSAULT_RIFLE_SPREAD_INCREASE_RATE * Math.PI / 180)
+        );
+    }
+}
+
+// Check if weapon just fired (for crosshair expansion)
+export function isWeaponFiring() {
+    if (!gameState.currentWeapon) return false;
+    
+    // For instant detection, check if currently shooting (mouse button held down)
+    // This is especially important for automatic weapons like assault rifle
+    // Don't check shootCooldown - we want instant expansion as soon as mouse is pressed
+    if (isShooting && !isReloading) {
+        return true;
+    }
+    
+    // Also check if weapon fired very recently (for single-shot weapons)
+    const currentTime = performance.now() / 1000;
+    return (currentTime - lastFireTime) < FIRE_INDICATOR_DURATION;
+}
+
 // Update camera shake decay (called from updateWeapon)
 export function updateCameraShake(deltaTime) {
     cameraShakeOffset.x *= Math.pow(cameraShakeDecay, deltaTime * 60); // Normalize to 60fps
@@ -382,6 +420,7 @@ export function shoot() {
     
     weapon.ammo--;
     shootCooldown = weapon.FIRE_RATE;
+    lastFireTime = performance.now() / 1000; // Track fire time in seconds
     
     // Increment consecutive shots for assault rifle
     if (gameState.currentWeapon === WEAPON_TYPES.ASSAULT_RIFLE) {
@@ -405,6 +444,11 @@ export function updateWeapon(deltaTime) {
     
     if (gameState.isInBuyPhase) {
         return false;
+    }
+    
+    // Auto-fire for automatic weapons when mouse is held down
+    if (isShooting && weapon.FIRE_MODE === 'auto' && shootCooldown <= 0 && !isReloading) {
+        shoot();
     }
     
     // Update camera shake decay

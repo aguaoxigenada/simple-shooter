@@ -592,6 +592,36 @@ export function getMovementDebugInfo() {
     };
 }
 
+// Export movement state for crosshair system
+export function getMovementState() {
+    const isMoving = direction.lengthSq() > 0;
+    const wantsToSprint = keys.shift && !isCrouched;
+    const hasEnoughStamina = gameState.stamina >= 1;
+    const isSprinting = wantsToSprint && hasEnoughStamina && isMoving;
+    const isWalking = isMoving && !isSprinting && !isCrouched;
+    
+    // Calculate movement speed factor (0 = stationary, 1 = max speed)
+    let speedFactor = 0;
+    if (isMoving) {
+        const horizontalSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (isSprinting) {
+            speedFactor = Math.min(horizontalSpeed / sprintSpeed, 1.0);
+        } else if (isCrouched) {
+            speedFactor = Math.min(horizontalSpeed / (moveSpeed * crouchSpeedMultiplier), 1.0) * 0.3; // Crouch is less impactful
+        } else {
+            speedFactor = Math.min(horizontalSpeed / moveSpeed, 1.0);
+        }
+    }
+    
+    return {
+        isMoving,
+        isWalking,
+        isSprinting,
+        isCrouching: isCrouched,
+        speedFactor
+    };
+}
+
 // Make debug function available in browser console
 if (typeof window !== 'undefined') {
     window.getMovementDebug = () => {
