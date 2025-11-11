@@ -67,6 +67,7 @@ export class PlayerEntity {
         this.weaponAmmo = {
             'pistol': { ammo: WEAPON.PISTOL.AMMO_CAPACITY, ammoTotal: WEAPON.PISTOL.AMMO_TOTAL },
             'assault_rifle': { ammo: WEAPON.ASSAULT_RIFLE.AMMO_CAPACITY, ammoTotal: WEAPON.ASSAULT_RIFLE.AMMO_TOTAL },
+            'shotgun': { ammo: WEAPON.SHOTGUN.AMMO_CAPACITY, ammoTotal: WEAPON.SHOTGUN.AMMO_TOTAL },
             'rocket_launcher': { ammo: WEAPON.ROCKET_LAUNCHER.AMMO_CAPACITY, ammoTotal: WEAPON.ROCKET_LAUNCHER.AMMO_TOTAL }
         };
         this.isReloading = false;
@@ -75,6 +76,10 @@ export class PlayerEntity {
         this.lastShootInput = false; // Track previous shoot state for semi-auto weapons
         this._debugLastShootLog = 0;
         this._debugLastRaycastLog = 0;
+        
+        // Assault rifle recoil/spread tracking
+        this.assaultRifleConsecutiveShots = 0;
+        this.assaultRifleFireDuration = 0;
     }
 
     static spawnHeight() {
@@ -306,11 +311,36 @@ export class PlayerEntity {
         const weaponMap = {
             'pistol': 'PISTOL',
             'assault_rifle': 'ASSAULT_RIFLE',
+            'shotgun': 'SHOTGUN',
             'rocket_launcher': 'ROCKET_LAUNCHER'
         };
         const weaponKey = weaponMap[this.currentWeapon] || 'ASSAULT_RIFLE';
         const weapon = WEAPON[weaponKey];
         const ammoState = this.weaponAmmo[this.currentWeapon] || { ammo: 0, ammoTotal: 0 };
+        
+        // Update assault rifle recoil/spread tracking
+        const isAssaultRifle = this.currentWeapon === 'assault_rifle';
+        if (isAssaultRifle) {
+            if (this.input.shoot) {
+                // Increase fire duration while shooting
+                this.assaultRifleFireDuration += deltaTime;
+            } else {
+                // Recover spread when not shooting
+                this.assaultRifleFireDuration = Math.max(0, this.assaultRifleFireDuration - deltaTime * 2.0);
+                // Reset consecutive shots after brief pause (0.2 seconds)
+                if (this.assaultRifleConsecutiveShots > 0 && !this.input.shoot) {
+                    setTimeout(() => {
+                        if (!this.input.shoot && this.currentWeapon === 'assault_rifle') {
+                            this.assaultRifleConsecutiveShots = 0;
+                        }
+                    }, 200);
+                }
+            }
+        } else {
+            // Reset when not using assault rifle
+            this.assaultRifleFireDuration = 0;
+            this.assaultRifleConsecutiveShots = 0;
+        }
         
         // Update reload timer
         if (this.isReloading) {
@@ -368,6 +398,11 @@ export class PlayerEntity {
         ammoState.ammo--;
         this.shootCooldown = weapon.FIRE_RATE;
         
+        // Increment consecutive shots for assault rifle
+        if (this.currentWeapon === 'assault_rifle') {
+            this.assaultRifleConsecutiveShots++;
+        }
+        
         if (weapon.PROJECTILE_TYPE === 'raycast') {
             // Perform raycast hit
             this.performRaycast(weapon, otherPlayers, onPlayerHit);
@@ -404,57 +439,171 @@ export class PlayerEntity {
     }
 
     performRaycast(weapon, otherPlayers, onPlayerHit) {
-        const direction = this.getShootDirection();
-        const dirLength = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z) || 1;
-        direction.x /= dirLength;
-        direction.y /= dirLength;
-        direction.z /= dirLength;
+        const baseDirection = this.getShootDirection();
+        const dirLength = Math.sqrt(baseDirection.x * baseDirection.x + baseDirection.y * baseDirection.y + baseDirection.z * baseDirection.z) || 1;
+        baseDirection.x /= dirLength;
+        baseDirection.y /= dirLength;
+        baseDirection.z /= dirLength;
 
-        const maxDistance = 100;
+        // Use weapon DISTANCE if available, otherwise default to 100
+        const maxDistance = weapon.DISTANCE || 100;
+        
+        // Check weapon type for spread and pellet count
+        const isShotgun = this.currentWeapon === 'shotgun';
+        const isPistol = this.currentWeapon === 'pistol';
+        const isAssaultRifle = this.currentWeapon === 'assault_rifle';
+        
+        const pelletCount = isShotgun ? 8 : 1;
+        const damagePerPellet = isShotgun ? weapon.DAMAGE / pelletCount : weapon.DAMAGE;
+        
+        // Spread angles: pistol has minimal spread (1-2 degrees), shotgun has 8 degrees
+        // Assault rifle has dynamic spread based on sustained fire
+        const ASSAULT_RIFLE_TIGHT_SHOTS = 5;
+        const ASSAULT_RIFLE_MAX_SPREAD = 6 * Math.PI / 180;
+        const ASSAULT_RIFLE_SPREAD_INCREASE_RATE = 0.5;
+        
+        let spreadAngle = 0;
+        if (isShotgun) {
+            spreadAngle = 8 * Math.PI / 180; // 8 degrees
+        } else if (isPistol) {
+            spreadAngle = (1 + Math.random()) * Math.PI / 180; // 1-2 degrees random
+        } else if (isAssaultRifle) {
+            // Calculate spread based on consecutive shots
+            if (this.assaultRifleConsecutiveShots < ASSAULT_RIFLE_TIGHT_SHOTS) {
+                // First few shots are tight (1 degree)
+                spreadAngle = 1 * Math.PI / 180;
+            } else {
+                // Spread increases with each shot after tight shots
+                const extraShots = this.assaultRifleConsecutiveShots - ASSAULT_RIFLE_TIGHT_SHOTS;
+                const currentSpread = Math.min(
+                    ASSAULT_RIFLE_MAX_SPREAD,
+                    1 * Math.PI / 180 + (extraShots * ASSAULT_RIFLE_SPREAD_INCREASE_RATE * Math.PI / 180)
+                );
+                spreadAngle = currentSpread;
+            }
+        }
+        
         const playerRadius = PLAYER.PLAYER_RADIUS + 0.35;
         const originX = this.position.x;
         const originY = this.position.y;
         const originZ = this.position.z;
         const stepSize = 0.1;
 
-        for (const player of otherPlayers) {
-            if (player.health <= 0) continue;
-
-            const playerHeight = player.isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
-            const topY = player.position.y;
-            const bottomY = player.position.y - playerHeight;
-            const radiusSq = playerRadius * playerRadius;
-
-            for (let t = 0; t <= maxDistance; t += stepSize) {
-                const px = originX + direction.x * t;
-                const py = originY + direction.y * t;
-                const pz = originZ + direction.z * t;
-
-                if (py < bottomY - playerRadius || py > topY + playerRadius) {
-                    continue;
+        // Fire each pellet
+        for (let pelletIndex = 0; pelletIndex < pelletCount; pelletIndex++) {
+            let direction = { x: baseDirection.x, y: baseDirection.y, z: baseDirection.z };
+            
+            // Apply spread for shotgun, pistol, and assault rifle pellets
+            if ((isShotgun && pelletIndex > 0) || (isPistol && spreadAngle > 0) || (isAssaultRifle && spreadAngle > 0)) {
+                // Generate spread pattern
+                let angle, radius;
+                if (isShotgun) {
+                    angle = (pelletIndex / pelletCount) * Math.PI * 2;
+                    radius = Math.random() * spreadAngle;
+                } else if (isAssaultRifle) {
+                    // Assault rifle: slight upward bias, then horizontal spread
+                    const upwardBias = this.assaultRifleConsecutiveShots < ASSAULT_RIFLE_TIGHT_SHOTS ? 0.3 : 0.1;
+                    angle = Math.random() * Math.PI * 2;
+                    // Add slight upward bias
+                    if (Math.random() < upwardBias) {
+                        angle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI / 4; // Slight upward
+                    }
+                    radius = Math.random() * spreadAngle;
+                } else {
+                    // Pistol
+                    angle = Math.random() * Math.PI * 2;
+                    radius = Math.random() * spreadAngle;
                 }
+                
+                // Calculate perpendicular vectors for spread
+                // Use right and up vectors relative to base direction
+                const right = {
+                    x: -baseDirection.z,
+                    y: 0,
+                    z: baseDirection.x
+                };
+                const rightLen = Math.sqrt(right.x * right.x + right.z * right.z) || 1;
+                right.x /= rightLen;
+                right.z /= rightLen;
+                
+                const up = {
+                    x: baseDirection.y * right.z - baseDirection.z * right.y,
+                    y: baseDirection.z * right.x - baseDirection.x * right.z,
+                    z: baseDirection.x * right.y - baseDirection.y * right.x
+                };
+                const upLen = Math.sqrt(up.x * up.x + up.y * up.y + up.z * up.z) || 1;
+                up.x /= upLen;
+                up.y /= upLen;
+                up.z /= upLen;
+                
+                // Apply spread offset
+                const spreadX = Math.cos(angle) * radius;
+                const spreadY = Math.sin(angle) * radius;
+                
+                direction.x = baseDirection.x + right.x * spreadX + up.x * spreadY;
+                direction.y = baseDirection.y + right.y * spreadX + up.y * spreadY;
+                direction.z = baseDirection.z + right.z * spreadX + up.z * spreadY;
+                
+                // Normalize
+                const newLen = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z) || 1;
+                direction.x /= newLen;
+                direction.y /= newLen;
+                direction.z /= newLen;
+            }
 
-                const dx = px - player.position.x;
-                const dz = pz - player.position.z;
-                if (dx * dx + dz * dz <= radiusSq) {
-                    const wasFatal = player.takeDamage(weapon.DAMAGE);
+            // Ray march for this pellet
+            let pelletHit = false;
+            for (const player of otherPlayers) {
+                if (player.health <= 0) continue;
 
-                    if (onPlayerHit) {
-                        onPlayerHit({
-                            attackerId: this.id,
-                            targetId: player.id,
-                            damage: weapon.DAMAGE,
-                            weaponType: this.currentWeapon,
-                            wasFatal
-                        });
+                const playerHeight = player.isCrouched ? PLAYER.CROUCH_HEIGHT : PLAYER.PLAYER_HEIGHT;
+                const topY = player.position.y;
+                const bottomY = player.position.y - playerHeight;
+                const radiusSq = playerRadius * playerRadius;
+
+                for (let t = 0; t <= maxDistance; t += stepSize) {
+                    const px = originX + direction.x * t;
+                    const py = originY + direction.y * t;
+                    const pz = originZ + direction.z * t;
+
+                    if (py < bottomY - playerRadius || py > topY + playerRadius) {
+                        continue;
                     }
 
-                    if (Date.now() - this._debugLastRaycastLog > 1000) {
-                        console.log(`[Raycast Hit] ${this.id} -> ${player.id}, damage ${weapon.DAMAGE}, fatal: ${wasFatal}`);
-                        this._debugLastRaycastLog = Date.now();
+                    const dx = px - player.position.x;
+                    const dz = pz - player.position.z;
+                    if (dx * dx + dz * dz <= radiusSq) {
+                        // Check for headshot (pistol only, 2x damage)
+                        // Head is approximately at player.position.y (top of player)
+                        // Body is at player.position.y - playerHeight/2 (center of body)
+                        const headY = player.position.y;
+                        const headRadius = 0.3; // Approximate head radius
+                        const isHeadshot = isPistol && py >= headY - headRadius && py <= headY + headRadius;
+                        const finalDamage = isHeadshot ? damagePerPellet * 2 : damagePerPellet;
+                        
+                        const wasFatal = player.takeDamage(finalDamage);
+
+                        if (onPlayerHit) {
+                            onPlayerHit({
+                                attackerId: this.id,
+                                targetId: player.id,
+                                damage: finalDamage,
+                                weaponType: this.currentWeapon,
+                                wasFatal,
+                                isHeadshot: isHeadshot || false
+                            });
+                        }
+
+                        if (Date.now() - this._debugLastRaycastLog > 1000) {
+                            const headshotText = isHeadshot ? ' [HEADSHOT]' : '';
+                            console.log(`[Raycast Hit] ${this.id} -> ${player.id}, damage ${finalDamage}${headshotText}, fatal: ${wasFatal}`);
+                            this._debugLastRaycastLog = Date.now();
+                        }
+                        pelletHit = true;
+                        break; // Hit found for this pellet, move to next pellet
                     }
-                    return;
                 }
+                if (pelletHit) break; // Move to next pellet
             }
         }
 

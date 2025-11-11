@@ -14,6 +14,14 @@ const SHOP_CATEGORIES = [
                 stats: 'Damage 50 | ROF 0.1s | Capacity 30'
             },
             {
+                id: 'shotgun',
+                name: 'Riot Shotgun',
+                cost: 750,
+                description: 'Close-range powerhouse. High damage, short range.',
+                weaponType: 'shotgun',
+                stats: 'Damage 80 | ROF 0.8s | Capacity 8 | Range 15m'
+            },
+            {
                 id: 'rocket_launcher',
                 name: 'Thunderbolt Launcher',
                 cost: 1250,

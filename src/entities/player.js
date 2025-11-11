@@ -5,6 +5,7 @@ import { collidableObjects, ladderVolumes } from '../world/environment.js';
 import { PLAYER } from '../shared/constants.js';
 import { networkClient } from '../network/client.js';
 import { playerManager } from '../network/playerManager.js';
+import { getCameraShakeOffset } from '../systems/weapon.js';
 
 // Use shared constants
 const moveSpeed = PLAYER.MOVE_SPEED;
@@ -423,19 +424,21 @@ export function updatePlayer(deltaTime) {
               }
         }
         
-        // Update camera rotation
+        // Update camera rotation with shake
+        const shake = getCameraShakeOffset();
         camera.rotation.order = 'YXZ';
-        camera.rotation.y = yaw;
-        camera.rotation.x = pitch;
+        camera.rotation.y = yaw + shake.x;
+        camera.rotation.x = pitch + shake.y;
         
         return; // Don't run local movement when connected
     }
     
     // Local movement (single player mode only)
-    // Update camera rotation
+    // Update camera rotation with shake
+    const shake = getCameraShakeOffset();
     camera.rotation.order = 'YXZ';
-    camera.rotation.y = yaw;
-    camera.rotation.x = pitch;
+    camera.rotation.y = yaw + shake.x;
+    camera.rotation.x = pitch + shake.y;
     
     // Update crouch state
     isCrouched = keys.ctrl;
@@ -586,6 +589,36 @@ export function getMovementDebugInfo() {
             serverPosition: localPlayer.serverPosition ? localPlayer.serverPosition.toArray() : null
         } : null,
         isConnected: networkClient.isConnected
+    };
+}
+
+// Export movement state for crosshair system
+export function getMovementState() {
+    const isMoving = direction.lengthSq() > 0;
+    const wantsToSprint = keys.shift && !isCrouched;
+    const hasEnoughStamina = gameState.stamina >= 1;
+    const isSprinting = wantsToSprint && hasEnoughStamina && isMoving;
+    const isWalking = isMoving && !isSprinting && !isCrouched;
+    
+    // Calculate movement speed factor (0 = stationary, 1 = max speed)
+    let speedFactor = 0;
+    if (isMoving) {
+        const horizontalSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (isSprinting) {
+            speedFactor = Math.min(horizontalSpeed / sprintSpeed, 1.0);
+        } else if (isCrouched) {
+            speedFactor = Math.min(horizontalSpeed / (moveSpeed * crouchSpeedMultiplier), 1.0) * 0.3; // Crouch is less impactful
+        } else {
+            speedFactor = Math.min(horizontalSpeed / moveSpeed, 1.0);
+        }
+    }
+    
+    return {
+        isMoving,
+        isWalking,
+        isSprinting,
+        isCrouching: isCrouched,
+        speedFactor
     };
 }
 

@@ -9,6 +9,7 @@ import { initWeapon, updateWeapon, forceEquipWeapon } from '../systems/weapon.js
 import { updateProjectiles, cleanupProjectiles } from '../systems/projectile.js';
 import { updateUI } from '../systems/ui.js';
 import { initWeaponViewModel, updateWeaponViewModel, triggerMuzzleFlash, cleanupWeaponViewModel } from '../entities/weaponViewModel.js';
+import { initCrosshair } from '../ui/crosshair.js';
 import { networkClient } from '../network/client.js';
 import { playerManager } from '../network/playerManager.js';
 import { MESSAGE_TYPES, PLAYER } from '../shared/constants.js';
@@ -353,6 +354,7 @@ export function init() {
     initPlayerControls(renderer);
     initWeapon(renderer); // This sets gameState.currentWeapon
     initWeaponViewModel(); // This needs currentWeapon to be set
+    initCrosshair(); // Initialize crosshair system
     
     // Setup network callbacks
     setupNetworkCallbacks();

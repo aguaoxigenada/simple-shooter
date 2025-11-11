@@ -1,5 +1,8 @@
 import { gameState } from '../core/gameState.js';
-import { getCurrentWeapon } from './weapon.js';
+import { getCurrentWeapon, getAssaultRifleSpread } from './weapon.js';
+import { updateCrosshair } from '../ui/crosshair.js';
+
+let lastUpdateTime = performance.now();
 
 // Update UI
 export function updateUI() {
@@ -12,6 +15,17 @@ export function updateUI() {
         document.getElementById('weapon-name').textContent = weapon.name;
         document.getElementById('ammo-count').textContent = weapon.ammo;
         document.getElementById('ammo-total').textContent = weapon.ammoTotal;
+    }
+    
+    // Calculate deltaTime for smooth crosshair interpolation
+    const currentTime = performance.now();
+    const deltaTime = (currentTime - lastUpdateTime) / 1000; // Convert to seconds
+    lastUpdateTime = currentTime;
+    
+    // Update crosshair based on current weapon, spread, and movement
+    if (gameState.currentWeapon) {
+        const spreadAmount = getAssaultRifleSpread();
+        updateCrosshair(gameState.currentWeapon, spreadAmount, deltaTime);
     }
     
     // Update stamina bar

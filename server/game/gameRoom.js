@@ -238,7 +238,7 @@ export class GameRoom {
         
         // Validate weapon type
         if (inputData.weaponType !== undefined) {
-            const validWeapons = ['pistol', 'assault_rifle', 'rocket_launcher'];
+            const validWeapons = ['pistol', 'assault_rifle', 'shotgun', 'rocket_launcher'];
             if (!validWeapons.includes(inputData.weaponType)) {
                 return false;
             }
