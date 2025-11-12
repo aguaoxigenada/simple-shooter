@@ -5,7 +5,7 @@ import { gameState } from '../core/gameState.js';
 import { initEnvironment } from '../world/environment.js';
 import { initTargets, targets, removeTargetById } from '../entities/targets.js';
 import { initPlayerControls, updatePlayer, applyServerSpawnPosition, resetSpawnTracking } from '../entities/player.js';
-import { initWeapon, updateWeapon, forceEquipWeapon } from '../systems/weapon.js';
+import { initWeapon, updateWeapon, forceEquipWeapon, WEAPON_TYPES } from '../systems/weapon.js';
 import { updateProjectiles, cleanupProjectiles } from '../systems/projectile.js';
 import { updateUI } from '../systems/ui.js';
 import { initWeaponViewModel, updateWeaponViewModel, triggerMuzzleFlash, cleanupWeaponViewModel } from '../entities/weaponViewModel.js';
@@ -13,115 +13,18 @@ import { initCrosshair } from '../ui/crosshair.js';
 import { networkClient } from '../network/client.js';
 import { playerManager } from '../network/playerManager.js';
 import { MESSAGE_TYPES, PLAYER } from '../shared/constants.js';
-import { openBuyMenu, closeBuyMenu, updateBuyMenuCountdown } from '../ui/buyMenu.js';
 import { showRoundIntro, updateRoundIntroCountdown, hideRoundIntro } from '../ui/roundIntro.js';
 
 let isInitialized = false;
 let victoryTriggered = false;
 let ambientLight = null;
 let directionalLight = null;
-let buyPhaseActive = false;
-let buyPhaseEndTime = 0;
-const BUY_PHASE_DURATION_MS = 20000;
 let roundIntroActive = false;
 let roundIntroEndTime = 0;
 const ROUND_INTRO_DURATION_MS = 3000;
-const ROUND_STIPEND = 1000;
-const WIN_REWARD_BONUS = 600;
-const LOSS_REWARD_BONUS = 300;
-
-function loadStoredTokens() {
-    if (typeof window === 'undefined' || !window.localStorage) return 0;
-    const raw = window.localStorage.getItem('ss_tokens');
-    const val = parseInt(raw, 10);
-    return Number.isNaN(val) ? 0 : Math.max(0, val);
-}
-
-function saveStoredTokens(value) {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    window.localStorage.setItem('ss_tokens', String(Math.max(0, Math.floor(value))));
-}
-
-function handlePurchase(item) {
-    if (!item) {
-        return { success: false, tokens: gameState.tokens };
-    }
-
-    if (gameState.tokens < item.cost) {
-        return { success: false, tokens: gameState.tokens };
-    }
-
-    gameState.tokens -= item.cost;
-
-    if (item.weaponType) {
-        forceEquipWeapon(item.weaponType);
-        gameState.currentWeapon = item.weaponType;
-        if (item.weaponType === 'pistol') {
-            gameState.loadout.secondary = item;
-        } else {
-            gameState.loadout.primary = item;
-        }
-    } else {
-        if (!gameState.loadout.utility.find((u) => u.id === item.id)) {
-            gameState.loadout.utility.push(item);
-        }
-    }
-    
-    saveStoredTokens(gameState.tokens);
-
-    return {
-        success: true,
-        tokens: gameState.tokens
-    };
-}
-
-function endBuyPhase(triggeredByMenu = false) {
-    if (!buyPhaseActive) return;
-    buyPhaseActive = false;
-    gameState.isInBuyPhase = false;
-    buyPhaseEndTime = 0;
-    if (!triggeredByMenu) {
-        closeBuyMenu(false);
-    }
-    startRoundIntro();
-}
-
-function startBuyPhase() {
-    if (buyPhaseActive) return;
-    buyPhaseActive = true;
-    const storedTokens = loadStoredTokens();
-    gameState.tokens = storedTokens + ROUND_STIPEND;
-    saveStoredTokens(gameState.tokens);
-    gameState.isInBuyPhase = true;
-    gameState.loadout = { primary: null, secondary: null, utility: [] };
-    gameState.currentWeapon = null;
-    buyPhaseEndTime = performance.now() + BUY_PHASE_DURATION_MS;
-    openBuyMenu({
-        tokens: gameState.tokens,
-        duration: BUY_PHASE_DURATION_MS / 1000,
-        onPurchase: handlePurchase,
-        onClose: () => endBuyPhase(true)
-    });
-}
 
 function startRoundIntro() {
-    if (!gameState.loadout.primary) {
-        gameState.loadout.primary = {
-            id: 'default_assault',
-            name: 'Standard Issue Rifle',
-            cost: 0,
-            weaponType: 'assault_rifle'
-        };
-        if (!gameState.currentWeapon) {
-            forceEquipWeapon('assault_rifle');
-            gameState.currentWeapon = 'assault_rifle';
-        }
-    }
-
-    const primaryName = gameState.loadout.primary ? gameState.loadout.primary.name : 'Standard Issue Rifle';
     showRoundIntro({
-        primaryWeaponName: primaryName,
-        utilityItems: gameState.loadout.utility,
         countdown: ROUND_INTRO_DURATION_MS / 1000
     });
     roundIntroActive = true;
@@ -282,8 +185,6 @@ export function init() {
     gameState.isMouseLocked = false;
     gameState.stamina = 100;
     gameState.currentWeapon = null;
-    gameState.tokens = 0;
-    gameState.isInBuyPhase = false;
     gameState.matchOutcome = null;
     gameState.matchResult = null;
     gameState.matchOpponentId = null;
@@ -352,7 +253,7 @@ export function init() {
     initEnvironment();
     initTargets();
     initPlayerControls(renderer);
-    initWeapon(renderer); // This sets gameState.currentWeapon
+    initWeapon(renderer); // This sets gameState.currentWeapon (uses selectedWeapon if available)
     initWeaponViewModel(); // This needs currentWeapon to be set
     initCrosshair(); // Initialize crosshair system
     
@@ -361,9 +262,20 @@ export function init() {
     
     // Connect to multiplayer server (optional - can be disabled for single player)
     networkClient.connect('Player');
+    
+    // Ensure weapon is properly equipped (initWeapon should have set it, but forceEquipWeapon ensures view model is updated)
+    if (gameState.selectedWeapon) {
+        // Multiplayer mode - ensure selected weapon is equipped and locked
+        forceEquipWeapon(gameState.selectedWeapon);
+    } else {
+        // Test range mode - ensure assault rifle is equipped (allows switching later)
+        forceEquipWeapon(WEAPON_TYPES.ASSAULT_RIFLE);
+    }
+    
+    // Start round intro immediately
     setTimeout(() => {
         if (isInitialized) {
-            startBuyPhase();
+            startRoundIntro();
         }
     }, 500);
     
@@ -412,14 +324,6 @@ export function update(deltaTime) {
         triggerMuzzleFlash();
     }
     
-    if (buyPhaseActive) {
-        const remaining = (buyPhaseEndTime - performance.now()) / 1000;
-        updateBuyMenuCountdown(remaining);
-        if (remaining <= 0) {
-            endBuyPhase();
-        }
-    }
-    
     if (roundIntroActive) {
         const remainingIntro = (roundIntroEndTime - performance.now()) / 1000;
         updateRoundIntroCountdown(remainingIntro);
@@ -463,10 +367,6 @@ export function render(rendererInstance, cameraInstance, sceneInstance) {
 export function cleanup() {
     isInitialized = false;
     victoryTriggered = false;
-    closeBuyMenu(false);
-    buyPhaseActive = false;
-    gameState.isInBuyPhase = false;
-    gameState.tokens = loadStoredTokens();
     roundIntroActive = false;
     roundIntroEndTime = 0;
     hideRoundIntro();

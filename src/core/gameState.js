@@ -16,11 +16,8 @@ class GameState {
         this.matchResult = null;
         this.matchOpponentId = null;
         this.matchKillerId = null;
-        this.loadout = {
-            primary: null,
-            secondary: null,
-            utility: []
-        };
+        // Note: selectedWeapon is NOT reset here - it persists across scenes
+        // It's only set in weapon selection scene and cleared when needed
         this.spawnInfo = {
             lastSpawnPosition: { x: 0, y: 0, z: 0 },
             lastSpawnYaw: 0

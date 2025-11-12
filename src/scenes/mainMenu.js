@@ -95,8 +95,8 @@ export function init() {
         'ARENA (MULTIPLAYER)',
         'Join the lobby and battle other players online.',
         () => {
-            console.log('Arena button clicked, switching to lobby scene');
-            switchScene(SCENES.LOBBY);
+            console.log('Arena button clicked, switching to weapon selection scene');
+            switchScene(SCENES.WEAPON_SELECTION);
         }
     );
 

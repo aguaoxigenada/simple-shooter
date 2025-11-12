@@ -28,9 +28,22 @@ export function updateUI() {
         updateCrosshair(gameState.currentWeapon, spreadAmount, deltaTime);
     }
     
-    // Update stamina bar
+    // Update stamina bar - only show in test range (not in multiplayer arena)
+    const staminaContainer = document.getElementById('stamina-container');
+    const staminaLabel = document.getElementById('stamina-label');
     const staminaBar = document.getElementById('stamina-bar');
     const staminaPercentage = document.getElementById('stamina-percentage');
+    
+    // Hide stamina UI in multiplayer arena (when selectedWeapon is set)
+    const isMultiplayer = !!gameState.selectedWeapon;
+    if (staminaContainer) {
+        staminaContainer.style.display = isMultiplayer ? 'none' : 'block';
+    }
+    if (staminaLabel) {
+        staminaLabel.style.display = isMultiplayer ? 'none' : 'block';
+    }
+    
+    // Update stamina values (even if hidden, for test range)
     if (staminaBar) {
         staminaBar.style.width = `${gameState.stamina}%`;
         staminaBar.style.backgroundColor = gameState.stamina < 20 ? '#ff0000' : 

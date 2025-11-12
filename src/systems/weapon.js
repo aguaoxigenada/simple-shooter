@@ -63,8 +63,8 @@ let lastFireTime = 0; // Track when weapon last fired (for crosshair)
 const FIRE_INDICATOR_DURATION = 0.15; // How long to show firing expansion (seconds)
 
 export function initWeapon(renderer) {
-    // Initialize current weapon
-    gameState.currentWeapon = WEAPON_TYPES.ASSAULT_RIFLE;
+    // Initialize current weapon - use selected weapon if available (multiplayer), otherwise default to assault rifle (test range)
+    gameState.currentWeapon = gameState.selectedWeapon || WEAPON_TYPES.ASSAULT_RIFLE;
     
     // Reset weapon ammo pools whenever the weapon system is initialized
     for (const weaponDef of Object.values(weapons)) {
@@ -96,20 +96,29 @@ export function initWeapon(renderer) {
         }
     });
 
-    // Weapon switching
+    // Weapon switching - enabled for test range, disabled for multiplayer
     window.addEventListener('keydown', (e) => {
         switch (e.code) {
             case 'Digit1':
-                switchWeapon(WEAPON_TYPES.PISTOL);
+                // Only allow switching if not in multiplayer (no selectedWeapon)
+                if (!gameState.selectedWeapon) {
+                    switchWeapon(WEAPON_TYPES.PISTOL);
+                }
                 break;
             case 'Digit2':
-                switchWeapon(WEAPON_TYPES.ASSAULT_RIFLE);
+                if (!gameState.selectedWeapon) {
+                    switchWeapon(WEAPON_TYPES.ASSAULT_RIFLE);
+                }
                 break;
             case 'Digit3':
-                switchWeapon(WEAPON_TYPES.SHOTGUN);
+                if (!gameState.selectedWeapon) {
+                    switchWeapon(WEAPON_TYPES.SHOTGUN);
+                }
                 break;
             case 'Digit4':
-                switchWeapon(WEAPON_TYPES.ROCKET_LAUNCHER);
+                if (!gameState.selectedWeapon) {
+                    switchWeapon(WEAPON_TYPES.ROCKET_LAUNCHER);
+                }
                 break;
             case 'KeyR':
                 if (!isReloading) {
@@ -134,6 +143,13 @@ export function initWeapon(renderer) {
 }
 
 function switchWeapon(weaponType) {
+    // Weapon switching is disabled in multiplayer (when selectedWeapon is set)
+    // Only allow switching in test range (when selectedWeapon is not set)
+    if (gameState.selectedWeapon && gameState.currentWeapon && gameState.currentWeapon !== weaponType) {
+        console.log('Weapon switching disabled in multiplayer - using selected weapon only');
+        return;
+    }
+    
     if (gameState.currentWeapon === weaponType) return;
     if (isReloading) return; // Can't switch while reloading
     
@@ -403,10 +419,6 @@ export function shoot() {
         return false;
     }
     
-    if (gameState.isInBuyPhase) {
-        return false;
-    }
-    
     if (weapon.ammo <= 0) {
         // Try to auto-reload if possible
         if (weapon.ammoTotal > 0 && !isReloading) {
@@ -439,10 +451,6 @@ export function shoot() {
 export function updateWeapon(deltaTime) {
     const weapon = getCurrentWeapon();
     if (!weapon) {
-        return false;
-    }
-    
-    if (gameState.isInBuyPhase) {
         return false;
     }
     

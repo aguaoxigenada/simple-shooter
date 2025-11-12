@@ -494,7 +494,9 @@ export class PlayerEntity {
             let direction = { x: baseDirection.x, y: baseDirection.y, z: baseDirection.z };
             
             // Apply spread for shotgun, pistol, and assault rifle pellets
-            if ((isShotgun && pelletIndex > 0) || (isPistol && spreadAngle > 0) || (isAssaultRifle && spreadAngle > 0)) {
+            // For shotgun: first pellet (index 0) fires straight, others get spread
+            // For pistol and assault rifle: all pellets get spread if spreadAngle > 0
+            if ((isShotgun && pelletIndex > 0) || ((isPistol || isAssaultRifle) && spreadAngle > 0)) {
                 // Generate spread pattern
                 let angle, radius;
                 if (isShotgun) {

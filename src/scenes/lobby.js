@@ -300,7 +300,13 @@ export function init() {
     if (isInitialized) return;
     console.log('Lobby scene init');
 
+    // Preserve selectedWeapon before reset (it's set in weapon selection scene)
+    const preservedSelectedWeapon = gameState.selectedWeapon;
     gameState.reset();
+    // Restore selectedWeapon after reset
+    if (preservedSelectedWeapon) {
+        gameState.selectedWeapon = preservedSelectedWeapon;
+    }
     resetSpawnTracking();
     localReady = false;
     readyStates.clear();

@@ -1,5 +1,4 @@
 let overlay = null;
-let loadoutLabel = null;
 let countdownLabel = null;
 
 function ensureOverlay() {
@@ -21,16 +20,11 @@ function ensureOverlay() {
     overlay.style.pointerEvents = 'none';
 
     const title = document.createElement('div');
-    title.textContent = 'Loadout Locked';
+    title.textContent = 'Round Starting';
     title.style.fontSize = '32px';
     title.style.letterSpacing = '4px';
     title.style.marginBottom = '16px';
     overlay.appendChild(title);
-
-    loadoutLabel = document.createElement('div');
-    loadoutLabel.style.fontSize = '20px';
-    loadoutLabel.style.marginBottom = '10px';
-    overlay.appendChild(loadoutLabel);
 
     countdownLabel = document.createElement('div');
     countdownLabel.style.fontSize = '26px';
@@ -40,11 +34,9 @@ function ensureOverlay() {
     document.body.appendChild(overlay);
 }
 
-export function showRoundIntro({ primaryWeaponName, utilityItems = [], countdown = 3 }) {
+export function showRoundIntro({ countdown = 3 }) {
     ensureOverlay();
     overlay.style.display = 'flex';
-    const utilities = utilityItems.length ? `Utility: ${utilityItems.map((u) => u.name).join(', ')}` : 'Utility: None';
-    loadoutLabel.textContent = `Primary: ${primaryWeaponName || 'Default'} | ${utilities}`;
     countdownLabel.textContent = `Round begins in ${Math.ceil(countdown)}s`;
 }
 

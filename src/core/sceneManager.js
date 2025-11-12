@@ -5,7 +5,8 @@ export const SCENES = {
     GAME_OVER: 'gameOver',
     VICTORY: 'victory',
     PLAYGROUND: 'playground',
-    LOBBY: 'lobby'
+    LOBBY: 'lobby',
+    WEAPON_SELECTION: 'weaponSelection'
 };
 
 let currentScene = null;
