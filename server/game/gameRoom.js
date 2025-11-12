@@ -125,8 +125,9 @@ export class GameRoom {
         
         // Update player input state
         try {
-            if (inputData.shoot !== undefined) {
-                console.log(`[Input] Shoot received from ${socketId}: shoot=${inputData.shoot}, weaponType=${inputData.weaponType || 'none'}`);
+            // Only log shoot:true to reduce spam (shoot:false is sent every frame when not shooting)
+            if (inputData.shoot === true) {
+                console.log(`[Input] Shoot received from ${socketId}: shoot=true, weaponType=${inputData.weaponType || 'none'}`);
             }
             player.updateInput(inputData);
         } catch (error) {

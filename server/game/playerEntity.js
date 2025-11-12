@@ -74,6 +74,7 @@ export class PlayerEntity {
         this.reloadTimer = 0;
         this.shootCooldown = 0;
         this.lastShootInput = false; // Track previous shoot state for semi-auto weapons
+        this.pendingSemiAutoShot = false; // Flag to fire semi-auto shot on next update
         this._debugLastShootLog = 0;
         this._debugLastRaycastLog = 0;
         
@@ -132,11 +133,14 @@ export class PlayerEntity {
                     console.log(`[Input] Player ${this.id}: Shoot button released, resetting lastShootInput`);
                 }
                 this.lastShootInput = false;
+                // Don't clear pendingSemiAutoShot here - let it fire in updateWeapon first
+                // It will be cleared after the shot fires or if button stays released
             } else if (newShootState === true && oldShootState === false) {
                 // Button was pressed - this is a transition from false to true
-                // Reset lastShootInput to allow the shot to fire
-                console.log(`[Input] Player ${this.id}: Shoot button pressed (transition), resetting lastShootInput to allow shot`);
+                // For semi-auto weapons, we need to fire immediately because shoot:false might arrive next
+                console.log(`[Input] Player ${this.id}: Shoot button pressed (transition), setting pending shot flag`);
                 this.lastShootInput = false;
+                this.pendingSemiAutoShot = true; // Flag to fire shot in updateWeapon
             }
             this.input.shoot = newShootState;
         }
@@ -427,9 +431,15 @@ export class PlayerEntity {
                 }
             } else if (weapon.FIRE_MODE === 'semi-auto') {
                 // Semi-auto: shoot once per button press
-                // Fire when shoot is true and lastShootInput is false
-                // The lastShootInput should have been reset in updateInput when shoot transitions
-                if (wantsToShoot && !this.lastShootInput) {
+                // Check for pending shot first (set when shoot transitions from false to true)
+                // This handles the case where shoot:true and shoot:false arrive in the same update cycle
+                if (this.pendingSemiAutoShot) {
+                    console.log(`[Shoot] Player ${this.id} semi-auto trigger (pending). Weapon: ${this.currentWeapon}, Ammo: ${ammoState.ammo}, Damage: ${weapon.DAMAGE}`);
+                    this.shoot(weapon, ammoState, otherPlayers, onShoot, onPlayerHit);
+                    this.lastShootInput = true;
+                    this.pendingSemiAutoShot = false; // Clear the flag
+                } else if (wantsToShoot && !this.lastShootInput) {
+                    // Fallback: fire when shoot is true and lastShootInput is false
                     console.log(`[Shoot] Player ${this.id} semi-auto trigger. Weapon: ${this.currentWeapon}, Ammo: ${ammoState.ammo}, Damage: ${weapon.DAMAGE}`);
                     this.shoot(weapon, ammoState, otherPlayers, onShoot, onPlayerHit);
                     // Immediately set lastShootInput to true to prevent multiple shots from same press
@@ -439,6 +449,11 @@ export class PlayerEntity {
                     if (this.lastShootInput) {
                         console.log(`[Shoot] Player ${this.id}: Button not pressed, resetting lastShootInput`);
                         this.lastShootInput = false;
+                    }
+                    // Clear pending shot if button is not pressed
+                    if (this.pendingSemiAutoShot) {
+                        console.log(`[Shoot] Player ${this.id}: Clearing pending shot because button is not pressed`);
+                        this.pendingSemiAutoShot = false;
                     }
                 } else if (wantsToShoot && this.lastShootInput) {
                     // Debug: why didn't it fire?
