@@ -49,8 +49,60 @@ export const keys = {
 let mouseDeltaX = 0;
 let mouseDeltaY = 0;
 
+// Store event listeners for cleanup
+let mouseMoveHandler = null;
+let keyDownHandler = null;
+let keyUpHandler = null;
+
+// Cleanup function - defined early so it can be called from initPlayerControls
+export function cleanupPlayerControls() {
+    // Remove event listeners if they exist
+    if (mouseMoveHandler) {
+        document.removeEventListener('mousemove', mouseMoveHandler);
+        mouseMoveHandler = null;
+    }
+    if (keyDownHandler) {
+        window.removeEventListener('keydown', keyDownHandler);
+        keyDownHandler = null;
+    }
+    if (keyUpHandler) {
+        window.removeEventListener('keyup', keyUpHandler);
+        keyUpHandler = null;
+    }
+    
+    // Reset input state
+    keys.w = false;
+    keys.a = false;
+    keys.s = false;
+    keys.d = false;
+    keys.space = false;
+    keys.shift = false;
+    keys.ctrl = false;
+    mouseDeltaX = 0;
+    mouseDeltaY = 0;
+    isCrouched = false;
+}
+
 export function initPlayerControls(renderer) {
-    document.addEventListener('mousemove', (e) => {
+    // Cleanup existing listeners first (safe to call even if none exist)
+    cleanupPlayerControls();
+    
+    // Reset input state
+    keys.w = false;
+    keys.a = false;
+    keys.s = false;
+    keys.d = false;
+    keys.space = false;
+    keys.shift = false;
+    keys.ctrl = false;
+    mouseDeltaX = 0;
+    mouseDeltaY = 0;
+    isCrouched = false;
+    
+    console.log('[Player Controls] Initializing player controls...');
+    
+    // Mouse movement handler
+    mouseMoveHandler = (e) => {
         if (!gameState.isMouseLocked) return;
         
         const deltaX = e.movementX * mouseSensitivity;
@@ -62,10 +114,11 @@ export function initPlayerControls(renderer) {
         yaw -= deltaX;
         pitch -= deltaY;
         pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-    });
+    };
+    document.addEventListener('mousemove', mouseMoveHandler);
 
     // Keyboard controls
-    window.addEventListener('keydown', (e) => {
+    keyDownHandler = (e) => {
         // Prevent default browser behavior for game keys
         const gameKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC'];
         if (gameKeys.includes(e.code)) {
@@ -107,9 +160,10 @@ export function initPlayerControls(renderer) {
                 gameState.health = 0;
                 break;
         }
-    });
+    };
+    window.addEventListener('keydown', keyDownHandler);
 
-    window.addEventListener('keyup', (e) => {
+    keyUpHandler = (e) => {
         // Prevent default browser behavior for game keys
         const gameKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC'];
         if (gameKeys.includes(e.code)) {
@@ -147,7 +201,8 @@ export function initPlayerControls(renderer) {
                 isCrouched = false;
                 break;
         }
-    });
+    };
+    window.addEventListener('keyup', keyUpHandler);
     
     // Handle window blur to reset all keys (prevents keys getting stuck)
     window.addEventListener('blur', () => {
@@ -159,6 +214,12 @@ export function initPlayerControls(renderer) {
         keys.shift = false;
         keys.ctrl = false;
         isCrouched = false;
+    });
+    
+    console.log('[Player Controls] Event listeners attached. Handlers:', {
+        mouseMove: !!mouseMoveHandler,
+        keyDown: !!keyDownHandler,
+        keyUp: !!keyUpHandler
     });
 }
 
@@ -238,7 +299,6 @@ export function resetSpawnTracking() {
     predictedPosition.set(0, 0, 0);
     lastServerPosition.set(0, 0, 0);
     currentLadderVolume = null;
-    isOnLadder = false;
 }
 
 export function updatePlayer(deltaTime) {

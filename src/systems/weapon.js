@@ -49,6 +49,7 @@ let shootCooldown = 0;
 let isReloading = false;
 let reloadTimer = 0;
 let lastShootSentState = false;
+let pendingShootFalse = false; // Track if we need to send shoot: false on next frame (for semi-auto)
 
 // Assault rifle recoil/spread tracking
 let assaultRifleFireDuration = 0; // Time spent firing continuously
@@ -76,6 +77,7 @@ export function initWeapon(renderer) {
     isReloading = false;
     reloadTimer = 0;
     lastShootSentState = false;
+    pendingShootFalse = false;
     
     renderer.domElement.addEventListener('mousedown', (e) => {
         if (e.button === 0 && gameState.isMouseLocked && !isReloading) { // Left click
@@ -163,12 +165,15 @@ function switchWeapon(weaponType) {
         assaultRifleConsecutiveShots = 0;
     }
     
-    if (networkClient.isConnected && lastShootSentState) {
+    // Always send weapon type to server when switching weapons
+    if (networkClient.isConnected) {
         networkClient.sendInput({
             shoot: false,
             weaponType
         });
-        lastShootSentState = false;
+        if (lastShootSentState) {
+            lastShootSentState = false;
+        }
     }
 }
 
@@ -512,21 +517,34 @@ export function updateWeapon(deltaTime) {
     if (isShooting && !isReloading && shootCooldown <= 0) {
         shotFired = shoot();
 
-        if (shotFired && weapon.FIRE_MODE === 'semi-auto') {
-            // For semi-auto, shoot once and then stop shooting until mouse is released and pressed again
-            isShooting = false;
-        }
-
         if (shotFired && networkClient.isConnected) {
+            // Send shoot: true immediately when shot fires
             networkClient.sendInput({
                 shoot: true,
                 weaponType: gameState.currentWeapon
             });
             lastShootSentState = true;
+            
+            // For semi-auto, stop shooting and schedule shoot: false for next frame
+            if (weapon.FIRE_MODE === 'semi-auto') {
+                isShooting = false;
+                pendingShootFalse = true; // Will send shoot: false on next frame
+            }
         }
     }
 
-    if ((!isShooting || isReloading) && networkClient.isConnected && lastShootSentState) {
+    // Send shoot: false when not shooting
+    // For semi-auto, delay by one frame to ensure shoot: true is processed first
+    if (pendingShootFalse && networkClient.isConnected) {
+        // Send shoot: false on the frame after shoot: true was sent
+        networkClient.sendInput({
+            shoot: false,
+            weaponType: gameState.currentWeapon
+        });
+        lastShootSentState = false;
+        pendingShootFalse = false;
+    } else if ((!isShooting || isReloading) && networkClient.isConnected && lastShootSentState && !pendingShootFalse) {
+        // For non-semi-auto or when not pending, send shoot: false immediately
         networkClient.sendInput({
             shoot: false,
             weaponType: gameState.currentWeapon
@@ -540,6 +558,7 @@ export function updateWeapon(deltaTime) {
 
 export function forceEquipWeapon(weaponType) {
     if (!weaponType) return false;
+    // Use switchWeapon which will send weapon type to server
     switchWeapon(weaponType);
     return true;
 }

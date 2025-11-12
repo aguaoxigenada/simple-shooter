@@ -83,6 +83,10 @@ export const GAME = {
     MAX_LAG_COMPENSATION: 0.2 // seconds of lag compensation
 };
 
+// Economy constants
+export const WIN_REWARD_BONUS = 100;
+export const LOSS_REWARD_BONUS = 25;
+
 // Network message types
 export const MESSAGE_TYPES = {
     // Client to Server

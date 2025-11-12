@@ -115,16 +115,18 @@ export class GameRoom {
             return;
         }
         
-        // Rate limiting
-        if (!this.checkInputRate(socketId)) {
-            console.warn(`Input rate limit exceeded for player ${socketId}`);
+        // Rate limiting - but always allow shoot inputs to go through
+        const hasShootInput = inputData.shoot !== undefined || inputData.weaponType !== undefined;
+        if (!hasShootInput && !this.checkInputRate(socketId)) {
+            // Only rate limit non-shoot inputs to prevent spam
+            // Shoot inputs are critical and should always be processed
             return;
         }
         
         // Update player input state
         try {
-            if (inputData.shoot) {
-                console.log(`[Input] Shoot received from ${socketId} at ${new Date().toISOString()}`);
+            if (inputData.shoot !== undefined) {
+                console.log(`[Input] Shoot received from ${socketId}: shoot=${inputData.shoot}, weaponType=${inputData.weaponType || 'none'}`);
             }
             player.updateInput(inputData);
         } catch (error) {

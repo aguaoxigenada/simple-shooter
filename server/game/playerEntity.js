@@ -121,10 +121,40 @@ export class PlayerEntity {
         
         // Handle shooting input
         if (inputData.shoot !== undefined) {
-            this.input.shoot = inputData.shoot;
+            const oldShootState = this.input.shoot;
+            const newShootState = inputData.shoot;
+            
+            // For semi-auto weapons, we need to track state transitions
+            // If shoot becomes false, reset lastShootInput to allow next shot
+            if (newShootState === false) {
+                // Button was released - always reset lastShootInput when shoot is false
+                if (oldShootState === true) {
+                    console.log(`[Input] Player ${this.id}: Shoot button released, resetting lastShootInput`);
+                }
+                this.lastShootInput = false;
+            } else if (newShootState === true && oldShootState === false) {
+                // Button was pressed - this is a transition from false to true
+                // Reset lastShootInput to allow the shot to fire
+                console.log(`[Input] Player ${this.id}: Shoot button pressed (transition), resetting lastShootInput to allow shot`);
+                this.lastShootInput = false;
+            }
+            this.input.shoot = newShootState;
         }
         if (inputData.weaponType !== undefined) {
-            this.currentWeapon = inputData.weaponType;
+            const oldWeapon = this.currentWeapon;
+            const newWeapon = inputData.weaponType;
+            // Validate weapon type
+            const validWeapons = ['pistol', 'assault_rifle', 'shotgun', 'rocket_launcher'];
+            if (validWeapons.includes(newWeapon)) {
+                this.currentWeapon = newWeapon;
+                if (oldWeapon !== this.currentWeapon) {
+                    console.log(`[Weapon Change] Player ${this.id}: "${oldWeapon}" -> "${this.currentWeapon}"`);
+                    // Reset lastShootInput when weapon changes to allow immediate shooting
+                    this.lastShootInput = false;
+                }
+            } else {
+                console.warn(`[Weapon Error] Player ${this.id}: Invalid weapon type "${newWeapon}", keeping "${this.currentWeapon}"`);
+            }
         }
     }
 
@@ -316,6 +346,18 @@ export class PlayerEntity {
         };
         const weaponKey = weaponMap[this.currentWeapon] || 'ASSAULT_RIFLE';
         const weapon = WEAPON[weaponKey];
+        
+        // Debug: Log weapon info
+        if (Date.now() - (this._debugLastWeaponLog || 0) > 2000) {
+            console.log(`[Weapon] Player ${this.id}: currentWeapon="${this.currentWeapon}", weaponKey="${weaponKey}", weapon exists=${!!weapon}, damage=${weapon?.DAMAGE}`);
+            this._debugLastWeaponLog = Date.now();
+        }
+        
+        if (!weapon) {
+            console.error(`[Weapon Error] Player ${this.id}: Weapon not found! currentWeapon="${this.currentWeapon}", weaponKey="${weaponKey}"`);
+            return; // Don't proceed if weapon is invalid
+        }
+        
         const ammoState = this.weaponAmmo[this.currentWeapon] || { ammo: 0, ammoTotal: 0 };
         
         // Update assault rifle recoil/spread tracking
@@ -366,6 +408,14 @@ export class PlayerEntity {
         if (!this.isReloading && this.shootCooldown <= 0 && ammoState.ammo > 0) {
             const wantsToShoot = this.input.shoot;
             
+            // Debug: log shoot state for semi-auto weapons
+            if (weapon.FIRE_MODE === 'semi-auto' && wantsToShoot) {
+                if (Date.now() - (this._debugLastShootStateLog || 0) > 500) {
+                    console.log(`[Shoot State] Player ${this.id}: wantsToShoot=${wantsToShoot}, lastShootInput=${this.lastShootInput}, weapon=${this.currentWeapon}`);
+                    this._debugLastShootStateLog = Date.now();
+                }
+            }
+            
             if (weapon.FIRE_MODE === 'auto') {
                 // Auto-fire: shoot while button is held
                 if (wantsToShoot) {
@@ -377,23 +427,40 @@ export class PlayerEntity {
                 }
             } else if (weapon.FIRE_MODE === 'semi-auto') {
                 // Semi-auto: shoot once per button press
+                // Fire when shoot is true and lastShootInput is false
+                // The lastShootInput should have been reset in updateInput when shoot transitions
                 if (wantsToShoot && !this.lastShootInput) {
-                    if (Date.now() - this._debugLastShootLog > 1000) {
-                        console.log(`[Shoot] Player ${this.id} semi-auto trigger. Ammo: ${ammoState.ammo}`);
-                        this._debugLastShootLog = Date.now();
-                    }
+                    console.log(`[Shoot] Player ${this.id} semi-auto trigger. Weapon: ${this.currentWeapon}, Ammo: ${ammoState.ammo}, Damage: ${weapon.DAMAGE}`);
                     this.shoot(weapon, ammoState, otherPlayers, onShoot, onPlayerHit);
+                    // Immediately set lastShootInput to true to prevent multiple shots from same press
+                    this.lastShootInput = true;
+                } else if (!wantsToShoot) {
+                    // Button is not pressed - ensure lastShootInput is false for next press
+                    if (this.lastShootInput) {
+                        console.log(`[Shoot] Player ${this.id}: Button not pressed, resetting lastShootInput`);
+                        this.lastShootInput = false;
+                    }
+                } else if (wantsToShoot && this.lastShootInput) {
+                    // Debug: why didn't it fire?
+                    if (Date.now() - (this._debugLastSemiAutoLog || 0) > 500) {
+                        console.log(`[Shoot Debug] Player ${this.id}: wantsToShoot=${wantsToShoot}, lastShootInput=${this.lastShootInput}, weapon=${this.currentWeapon}, ammo=${ammoState.ammo}, cooldown=${this.shootCooldown}`);
+                        this._debugLastSemiAutoLog = Date.now();
+                    }
                 }
+            } else {
+                // For auto weapons, just update the state
+                this.lastShootInput = wantsToShoot;
             }
-            
-            this.lastShootInput = wantsToShoot;
         }
     }
 
     shoot(weapon, ammoState, otherPlayers, onShoot, onPlayerHit) {
         if (ammoState.ammo <= 0 || this.shootCooldown > 0 || this.isReloading) {
+            console.log(`[Shoot Blocked] Player ${this.id}: ammo=${ammoState.ammo}, cooldown=${this.shootCooldown}, reloading=${this.isReloading}`);
             return false;
         }
+        
+        console.log(`[Shoot Fired] Player ${this.id}: weapon="${this.currentWeapon}", damage=${weapon.DAMAGE}, projectileType=${weapon.PROJECTILE_TYPE}`);
         
         ammoState.ammo--;
         this.shootCooldown = weapon.FIRE_RATE;
@@ -455,6 +522,15 @@ export class PlayerEntity {
         
         const pelletCount = isShotgun ? 8 : 1;
         const damagePerPellet = isShotgun ? weapon.DAMAGE / pelletCount : weapon.DAMAGE;
+        
+        // Track if any pellet hits
+        let anyPelletHit = false;
+        
+        // Debug logging for weapon damage (throttled)
+        if (Date.now() - (this._debugLastRaycastWeaponLog || 0) > 2000) {
+            console.log(`[Raycast] Player ${this.id}: weapon="${this.currentWeapon}", damage=${weapon.DAMAGE}, maxDistance=${maxDistance}, otherPlayers=${otherPlayers.length}`);
+            this._debugLastRaycastWeaponLog = Date.now();
+        }
         
         // Spread angles: pistol has minimal spread (1-2 degrees), shotgun has 8 degrees
         // Assault rifle has dynamic spread based on sustained fire
@@ -562,11 +638,29 @@ export class PlayerEntity {
                 const topY = player.position.y;
                 const bottomY = player.position.y - playerHeight;
                 const radiusSq = playerRadius * playerRadius;
+                
+                // Calculate distance to player for range check
+                const dxToPlayer = player.position.x - originX;
+                const dyToPlayer = player.position.y - originY;
+                const dzToPlayer = player.position.z - originZ;
+                const distanceToPlayer = Math.sqrt(dxToPlayer * dxToPlayer + dyToPlayer * dyToPlayer + dzToPlayer * dzToPlayer);
+                
+                // Check if player is within weapon range before ray marching
+                if (distanceToPlayer > maxDistance + playerRadius) {
+                    // Player is too far away, skip this pellet
+                    continue;
+                }
 
                 for (let t = 0; t <= maxDistance; t += stepSize) {
                     const px = originX + direction.x * t;
                     const py = originY + direction.y * t;
                     const pz = originZ + direction.z * t;
+                    
+                    // Check if we've gone past max distance
+                    const traveledDistance = Math.sqrt((px - originX) * (px - originX) + (py - originY) * (py - originY) + (pz - originZ) * (pz - originZ));
+                    if (traveledDistance > maxDistance) {
+                        break; // Stop ray marching if we've exceeded max distance
+                    }
 
                     if (py < bottomY - playerRadius || py > topY + playerRadius) {
                         continue;
@@ -574,6 +668,7 @@ export class PlayerEntity {
 
                     const dx = px - player.position.x;
                     const dz = pz - player.position.z;
+                    const distance2D = Math.sqrt(dx * dx + dz * dz);
                     if (dx * dx + dz * dz <= radiusSq) {
                         // Check for headshot (pistol only, 2x damage)
                         // Head is approximately at player.position.y (top of player)
@@ -584,6 +679,9 @@ export class PlayerEntity {
                         const finalDamage = isHeadshot ? damagePerPellet * 2 : damagePerPellet;
                         
                         const wasFatal = player.takeDamage(finalDamage);
+                        
+                        const headshotText = isHeadshot ? ' [HEADSHOT]' : '';
+                        console.log(`[Raycast Hit] Player ${this.id} -> ${player.id}: distance2D=${distance2D.toFixed(2)}, maxDistance=${maxDistance}, damage=${finalDamage}${headshotText}, weapon=${this.currentWeapon}, fatal=${wasFatal}`);
 
                         if (onPlayerHit) {
                             onPlayerHit({
@@ -595,23 +693,19 @@ export class PlayerEntity {
                                 isHeadshot: isHeadshot || false
                             });
                         }
-
-                        if (Date.now() - this._debugLastRaycastLog > 1000) {
-                            const headshotText = isHeadshot ? ' [HEADSHOT]' : '';
-                            console.log(`[Raycast Hit] ${this.id} -> ${player.id}, damage ${finalDamage}${headshotText}, fatal: ${wasFatal}`);
-                            this._debugLastRaycastLog = Date.now();
-                        }
                         pelletHit = true;
+                        anyPelletHit = true;
                         break; // Hit found for this pellet, move to next pellet
                     }
                 }
                 if (pelletHit) break; // Move to next pellet
             }
         }
-
-        if (Date.now() - this._debugLastRaycastLog > 2000) {
-            console.log(`[Raycast Miss] Player ${this.id} shot but no hit detected.`);
-            this._debugLastRaycastLog = Date.now();
+        
+        // Only log miss if NO pellets hit at all (for shotguns, some pellets might miss even if others hit)
+        if (!anyPelletHit && Date.now() - (this._debugLastMissLog || 0) > 2000) {
+            console.log(`[Raycast Miss] Player ${this.id} shot but no pellets hit. Weapon: ${this.currentWeapon}, maxDistance: ${maxDistance}, otherPlayers: ${otherPlayers.length}`);
+            this._debugLastMissLog = Date.now();
         }
     }
 

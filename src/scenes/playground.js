@@ -4,7 +4,7 @@ import { scene, camera, renderer } from '../core/scene.js';
 import { gameState } from '../core/gameState.js';
 import { initEnvironment } from '../world/environment.js';
 import { initTargets, targets, removeTargetById } from '../entities/targets.js';
-import { initPlayerControls, updatePlayer, applyServerSpawnPosition, resetSpawnTracking } from '../entities/player.js';
+import { initPlayerControls, updatePlayer, applyServerSpawnPosition, resetSpawnTracking, cleanupPlayerControls } from '../entities/player.js';
 import { initWeapon, updateWeapon, forceEquipWeapon, WEAPON_TYPES } from '../systems/weapon.js';
 import { updateProjectiles, cleanupProjectiles } from '../systems/projectile.js';
 import { updateUI } from '../systems/ui.js';
@@ -12,7 +12,7 @@ import { initWeaponViewModel, updateWeaponViewModel, triggerMuzzleFlash, cleanup
 import { initCrosshair } from '../ui/crosshair.js';
 import { networkClient } from '../network/client.js';
 import { playerManager } from '../network/playerManager.js';
-import { MESSAGE_TYPES, PLAYER } from '../shared/constants.js';
+import { MESSAGE_TYPES, PLAYER, WIN_REWARD_BONUS, LOSS_REWARD_BONUS } from '../shared/constants.js';
 import { showRoundIntro, updateRoundIntroCountdown, hideRoundIntro } from '../ui/roundIntro.js';
 
 let isInitialized = false;
@@ -88,6 +88,13 @@ function setupNetworkCallbacks() {
             }
             applyServerSpawnPosition(data.position.x, data.position.y, data.position.z, data.rotation?.yaw || 0);
         }
+        
+        // Send current weapon type to server when spawning
+        if (networkClient.isConnected && gameState.currentWeapon) {
+            networkClient.sendInput({
+                weaponType: gameState.currentWeapon
+            });
+        }
     };
     
     // Player left
@@ -135,7 +142,12 @@ function setupNetworkCallbacks() {
         if (isWinner || isLoser) {
             const bonus = isWinner ? WIN_REWARD_BONUS : LOSS_REWARD_BONUS;
             gameState.tokens += bonus;
-            saveStoredTokens(gameState.tokens);
+            // Save tokens to localStorage
+            try {
+                localStorage.setItem('playerTokens', gameState.tokens.toString());
+            } catch (e) {
+                console.warn('Failed to save tokens to localStorage:', e);
+            }
             console.log(`[Economy] Round complete. ${isWinner ? 'Win' : 'Loss'} bonus +${bonus} credits. Total: ${gameState.tokens}`);
         }
 
@@ -252,6 +264,10 @@ export function init() {
     // Initialize game systems (environment creates the ground)
     initEnvironment();
     initTargets();
+    
+    // Ensure mouse lock state is reset before initializing controls
+    gameState.isMouseLocked = false;
+    
     initPlayerControls(renderer);
     initWeapon(renderer); // This sets gameState.currentWeapon (uses selectedWeapon if available)
     initWeaponViewModel(); // This needs currentWeapon to be set
@@ -372,6 +388,9 @@ export function cleanup() {
     hideRoundIntro();
     resetSpawnTracking();
     
+    // Cleanup player controls (remove event listeners)
+    cleanupPlayerControls();
+    
     // Disconnect from server
     networkClient.disconnect();
     
@@ -408,8 +427,10 @@ export function cleanup() {
         gameUI.style.display = 'none';
     }
     
-    // Unlock pointer if locked
+    // Unlock pointer if locked and reset mouse lock state
     if (document.pointerLockElement === renderer.domElement) {
         document.exitPointerLock();
     }
+    // Ensure mouse lock state is reset
+    gameState.isMouseLocked = false;
 }

@@ -106,7 +106,7 @@ export const MESSAGE_TYPES = {
 // Input validation limits
 export const INPUT_LIMITS = {
     MAX_MOUSE_DELTA: 1000, // Maximum mouse movement per frame
-    MAX_INPUT_RATE: 60, // Maximum inputs per second
+    MAX_INPUT_RATE: 120, // Maximum inputs per second (increased to handle movement + shooting)
     MAX_NAME_LENGTH: 32,
     MIN_NAME_LENGTH: 1
 };
